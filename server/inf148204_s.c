@@ -18,7 +18,7 @@ int main() {
         return -1;
     }
     
-    printf("%s\n%s\n", users[0]->login, users[3]->login);
+    printf("%s\n%s\n", users[0]->login, users[0]->password);
     
     for(int i=0; i<maxUsers; ++i)
         free(users[i]);
@@ -74,6 +74,38 @@ int loadConfig(char *filename, struct user **users, int userNum) {
 }
 
 int loadUser(int fd, struct user *userRegister) {
+    
+    char buf[maxBuffer];
+    int l = 0;
+    int step = 0;
+    char character;
+    
+    int bytes = read(fd, &character, 1);
+    while(character != '\n') {
+        
+        if(!bytes)
+            break;
+        
+        if(character == ';') {
+            buf[l] = '\0';
+            
+            // step == 0 means ';' from mode
+            
+            if(step == 1)
+                strcpy(userRegister->login, buf);
+
+            step++;
+            l=0;
+        } else {
+            buf[l] = character;
+            l++;
+        }
+        
+        read(fd, &character, 1);
+    }
+
+    buf[l] = '\0';
+    strcpy(userRegister->password, buf);
     
     return 0;
 }

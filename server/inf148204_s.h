@@ -23,7 +23,7 @@
 #define maxPasswordLength 32
 #define maxGroupName 32
 
-#define maxLineLength 512
+#define maxBuffer 512
 
 struct user {
     char login[maxLoginLength];
