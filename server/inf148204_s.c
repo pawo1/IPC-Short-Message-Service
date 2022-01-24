@@ -18,7 +18,7 @@ int main() {
         return -1;
     }
     
-    printf("%s\n%s\n", users[0]->login, users[0]->password);
+    printf("%s\n%s\n", users[2]->login, users[2]->password);
     
     for(int i=0; i<maxUsers; ++i)
         free(users[i]);
@@ -30,9 +30,6 @@ int main() {
 
 int loadConfig(char *filename, struct user **users, int userNum) {
     printf("Loading configuration...\n");
-    
-    strcpy(users[3]->login,"test");
-    strcpy(users[0]->login, "ALALA");
     
     int file = open(filename, O_RDONLY);
     if(file < 0)
@@ -58,14 +55,7 @@ int loadConfig(char *filename, struct user **users, int userNum) {
                 addGroup(file, users);
             
         }
-        
-        
-        break;
-        
-        while(character != '\n') {
-            
-            
-        }
+        bytes = read(file, &character, 1);
     }
     
     
