@@ -1,22 +1,48 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <ctype.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <sys/shm.h>
+#include <time.h>
+
 #include "inf148204_s.h"
-#include "inf148204_f.h"
+#include "inf148204_defines.h"
+#include "inf148204_logUtils.h"
+#include "inf148204_fileOperations.h"
 
 
-int main() {
+int main(int argc, char *argv[]) {
     
     int result;
     
     struct user **users = malloc( sizeof(struct user*) * maxUsers );
     for(int i=0; i<maxUsers; ++i)
         users[i] = malloc( sizeof(struct user) );
+        
+    struct group **groups = malloc( sizeof(struct group*) * maxGroups);
+    for(int i=0; i<maxGroups; ++i)
+        groups[i] = malloc( sizeof(struct group) );
     
-    result = loadConfig("test.txt", users, maxUsers);
+    result = loadConfig("test.txt", users, maxUsers, groups, maxGroups);
     
     if(result < 0) {
+        printLogTime();
         printf("Server cannot load configuration...\n");
+        printLogTime();
         printf("Stopping the server...\n");
         return -1;
     }
+    
+    printLogTime();
+    printf("Server loaded %d users\n", result);
     
     printf("%s\n%s\n", users[2]->login, users[2]->password);
     
@@ -24,88 +50,10 @@ int main() {
         free(users[i]);
     free(users);
     
-    return 0;
-}
-
-
-int loadConfig(char *filename, struct user **users, int userNum) {
-    printf("Loading configuration...\n");
-    
-    int file = open(filename, O_RDONLY);
-    if(file < 0)
-        return file;
-    
-    int i = 0;
-    int result;
-    char character;
-    
-    int bytes = read(file, &character, 1);
-    while(bytes) {
-        // check type of line
-        switch(character) {
-            case 'U':
-                result = loadUser(file, users[i]);
-                if(result == 0) // loading user was sucessful 
-                    i++;
-                break;
-            case 'G':
-                loadGroup(file);
-                break;
-            case 'A':
-                addGroup(file, users);
-            
-        }
-        bytes = read(file, &character, 1);
-    }
-    
-    
-    close(file); 
-    return 0;
-}
-
-int loadUser(int fd, struct user *userRegister) {
-    
-    char buf[maxBuffer];
-    int l = 0;
-    int step = 0;
-    char character;
-    
-    int bytes = read(fd, &character, 1);
-    while(character != '\n') {
-        
-        if(!bytes)
-            break;
-        
-        if(character == ';') {
-            buf[l] = '\0';
-            
-            // step == 0 means ';' from mode
-            
-            if(step == 1)
-                strcpy(userRegister->login, buf);
-
-            step++;
-            l=0;
-        } else {
-            buf[l] = character;
-            l++;
-        }
-        
-        read(fd, &character, 1);
-    }
-
-    buf[l] = '\0';
-    strcpy(userRegister->password, buf);
+    for(int i=0; i<maxGroups; ++i)
+        free(groups[i]);
+    free(groups);
     
     return 0;
 }
 
-int loadGroup(int fd) {
-    
-    return 0;
-}
-
-int addGroup(int fd, struct user **users) {
-    
-    return 0;
-}
