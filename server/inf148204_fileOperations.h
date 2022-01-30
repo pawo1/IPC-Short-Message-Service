@@ -4,14 +4,14 @@
 #define __inf148204_fileOperations_h
 
 struct user {
-    char login[maxLoginLength+1];
-    char password[maxPasswordLength+1];
+    char login[MAX_LOGIN_LENGTH+1];
+    char password[MAX_PASSWORD_LENGTH+1];
     int logged;
 };
 
 struct group {
-    char name[maxGroupName+1];
-    int userId[maxUsers];
+    char name[MAX_GROUP_NAME+1];
+    int userId[MAX_USERS];
     int groupSize;
 };
 

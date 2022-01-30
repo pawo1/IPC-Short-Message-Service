@@ -56,7 +56,7 @@ int loadConfig(char *filename, struct user **users, int userNum, struct group **
 
 int loadUser(int fd, struct user *userRegister) {
     
-    char buf[maxBuffer];
+    char buf[MAX_BUFFER];
     int l = 0;
     int step = 0;
     char character;
@@ -73,7 +73,7 @@ int loadUser(int fd, struct user *userRegister) {
             // step == 0 means ';' from mode
             
             if(step == 1)
-                strncpy(userRegister->login, buf, maxLoginLength);
+                strncpy(userRegister->login, buf, MAX_LOGIN_LENGTH);
 
             step++;
             l=0;
@@ -86,7 +86,7 @@ int loadUser(int fd, struct user *userRegister) {
     }
 
     buf[l] = '\0';
-    strncpy(userRegister->password, buf, maxPasswordLength);
+    strncpy(userRegister->password, buf, MAX_PASSWORD_LENGTH);
     
     userRegister->logged = 0;
     
@@ -94,7 +94,7 @@ int loadUser(int fd, struct user *userRegister) {
 }
 
 int loadGroup(int fd, struct group *groupRegister) {
-    char buf[maxBuffer];
+    char buf[MAX_BUFFER];
     int l = 0;
     char character;
     
@@ -108,8 +108,8 @@ int loadGroup(int fd, struct group *groupRegister) {
     }
     
     buf[l] = '\0';
-    strncpy(groupRegister->name, buf, maxGroupName);
-    groupRegister->name[maxGroupName] = '\0'; // for trimed names, because strncpy doesn't add it itself
+    strncpy(groupRegister->name, buf, MAX_GROUP_NAME);
+    groupRegister->name[MAX_GROUP_NAME] = '\0'; // for trimed names, because strncpy doesn't add it itself
     
     /*for(int i=0; i<maxUsers; ++i) {
         groupRegister->userId[i] = -1;
@@ -121,12 +121,12 @@ int loadGroup(int fd, struct group *groupRegister) {
 
 int addGroup(int fd, struct user **users, struct group **groups) {
     
-    char userName[maxLoginLength+1];
-    char groupName[maxGroupName+1];
+    char userName[MAX_LOGIN_LENGTH+1];
+    char groupName[MAX_GROUP_NAME+1];
     int groupFind = 0;
     int userFind = 0;
     
-    char buf[maxBuffer];
+    char buf[MAX_BUFFER];
     int l = 0;
     int step = 0;
     char character;
@@ -143,8 +143,8 @@ int addGroup(int fd, struct user **users, struct group **groups) {
             // step == 0 means ';' from mode
             
             if(step == 1) {
-                strncpy(userName, buf, maxLoginLength);
-                userName[maxLoginLength] = '\0';
+                strncpy(userName, buf, MAX_LOGIN_LENGTH);
+                userName[MAX_LOGIN_LENGTH] = '\0';
             }
             step++;
             l=0;
@@ -157,14 +157,14 @@ int addGroup(int fd, struct user **users, struct group **groups) {
     }
 
     buf[l] = '\0';
-    strncpy(groupName, buf, maxGroupName);
-    groupName[maxGroupName] = '\0';
+    strncpy(groupName, buf, MAX_GROUP_NAME);
+    groupName[MAX_GROUP_NAME] = '\0';
     
-    for(int i=0; i<maxGroups; ++i) {
+    for(int i=0; i<MAX_GROUPS; ++i) {
         
         if(strcmp(groups[i]->name, groupName) == 0) {
             groupFind = 1;
-            for(int j=0; j<maxUsers; ++j) {
+            for(int j=0; j<MAX_USERS; ++j) {
                 if(strcmp(users[j]->login, userName) == 0) {
                     userFind = 1;
                     int index = groups[i]->groupSize;
