@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
     printf("Server joining run loop. Ctrl+C to stop work\n");
     
     while(run) {
-        if(msgrcv(auth_queue, &auth, sizeof(auth)-sizeof(long), 0, IPC_NOWAIT)) {
+        if(msgrcv(auth_queue, &auth, sizeof(auth)-sizeof(long), 0, IPC_NOWAIT) > 0) {
             for(int i=0; i<loaded_users; ++i) {
                 if(strcmp(auth.login, users[i]->login) == 0) {
                     if(!users[i]->logged) {
@@ -120,6 +120,9 @@ int main(int argc, char *argv[]) {
                             message.end = 1;
                             message.from = -1;
                             message.to = -1;
+                            
+                            printLogTime();
+                            printf("Password: %s\t Get: %s\n", auth.password, users[i]->password);
                         }
                     }
                     else {
@@ -130,6 +133,7 @@ int main(int argc, char *argv[]) {
                         
                     }
                     msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
+                    break;
                 }
             }
             // TODO: Nie znaleziono 
