@@ -20,5 +20,7 @@ struct msgbuf {
     int end;
 };
 
+int login(int logged, int auth_queue);
+void logout();
 
 #endif

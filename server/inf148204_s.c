@@ -106,17 +106,21 @@ int main(int argc, char *argv[]) {
     
     while(run) {
         if(msgrcv(auth_queue, &auth, sizeof(auth)-sizeof(long), 0, IPC_NOWAIT) > 0) {
+            int find = 0;
             for(int i=0; i<loaded_users; ++i) {
                 if(strcmp(auth.login, users[i]->login) == 0) {
+                    find = 1;
                     if(!users[i]->logged) {
                         if(strcmp(auth.password, users[i]->password) == 0) {
                             users[i]->logged = 1;
                             sprintf(message.msg, "[Server]\tWelcome back %s!\n", users[i]->login);
+                            message.mtype = 2;
                             message.end = 1;
                             message.from = -1;
                             message.to = message_queues[i]; // adress for private queue
                         } else {
                             strncpy(message.msg, "[Server]\tWrong Password!\n", MAX_BUFFER);
+                            message.mtype = 1;
                             message.end = 1;
                             message.from = -1;
                             message.to = -1;
@@ -127,6 +131,7 @@ int main(int argc, char *argv[]) {
                     }
                     else {
                         strncpy(message.msg, "[Server]\tUser already logged on another client\n", MAX_BUFFER);
+                        message.mtype = 1;
                         message.end = 1;
                         message.from = -1;
                         message.to = -1;
@@ -136,8 +141,15 @@ int main(int argc, char *argv[]) {
                     break;
                 }
             }
-            // TODO: Nie znaleziono 
-            
+            if(!find) {
+                // wrong username
+                strncpy(message.msg, "[Server]\tWrong Login\n", MAX_BUFFER);
+                message.mtype = 1;
+                message.end = 1;
+                message.from = -1;
+                message.to = -1;
+                msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
+            }
         }
         
     }

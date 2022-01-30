@@ -12,17 +12,34 @@
 
 
 int main() {
-    char login[MAX_LOGIN_LENGTH];
-    char password[MAX_PASSWORD_LENGTH];
+
     int logged = 0;
     
     int auth_queue = msgget(99901, 0640);
-    int client_queue = msgget(getpid(), 0640 | IPC_CREAT);
+
     int message_queue;
     
-    struct msgbuf message;
+
     
     if(auth_queue > 0) {
+        logged = login(logged, auth_queue);
+    } else {
+        printf("Server is not available");
+        return -1;
+    }
+    
+    return 0;
+}
+
+int login(int logged, int auth_queue) {
+        char login[MAX_LOGIN_LENGTH];
+        char password[MAX_PASSWORD_LENGTH];
+    
+        if(logged) {
+            printf("You're logged in. Logout first, to change user");
+            return -1;
+        }
+        int client_queue = msgget(getpid(), 0640 | IPC_CREAT);
         while(!logged) {
             printf("Login:");
             scanf("%s", login);
@@ -30,6 +47,7 @@ int main() {
             scanf("%s", password);
             
             struct authbuf auth;
+            struct msgbuf message;
             strcpy(auth.login, login);
             strcpy(auth.password, password);
             auth.mtype = 1;
@@ -42,16 +60,10 @@ int main() {
             if(message.to != -1) {
                 // succesfull login
                 logged = 1;
-                message_queue = message.to;
                 msgctl(client_queue, IPC_RMID, NULL);
+                return message.to; // private queue for user
             }
             
         }
-    } else {
-        printf("Server is not available");
-        msgctl(client_queue, IPC_RMID, NULL);
-        return -1;
-    }
-    
-    return 0;
+        return 0;
 }
