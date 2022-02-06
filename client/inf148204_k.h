@@ -13,14 +13,38 @@ struct authbuf {
 
 struct msgbuf {
     long mtype;
-    int from;
-    int to;
-    int id_group;
+    int priority;
+    char from[MAX_LOGIN_LENGTH];
     char msg[MAX_BUFFER];
+    int start;
     int end;
 };
 
-int login(int logged, int auth_queue);
+struct state {
+    int mainMenu;
+    int choosenUser;
+    int choosenGroup;
+    char prompt[40];
+    int promptSize;
+    int privateQueue;
+};
+
+struct sembuf p = { 0, -1, SEM_UNDO}; 
+struct sembuf v = { 0, +1, SEM_UNDO};
+
+union semun {
+    int val;
+    struct semid_ds *buf;
+    unsigned short *array;
+};
+
+void run_changer();
+
+int login(int logged, int authQueue);
 void logout();
+
+void messageReceiver(struct state *status, int statusSemaphore, int printSemaphore);
+void userManager(struct state *status, int statusSemaphore, int printSemaphore);
+void proceedMessage(struct msgbuf message, char * prompt, int promptSize);
 
 #endif
