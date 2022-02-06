@@ -25,9 +25,8 @@ int main() {
     int logged = 0;
     
     int auth_queue = msgget(99901, 0640);
-
     
-    
+        
     int mem_id = shmget(ftok(".", 99901), sizeof(struct state), IPC_CREAT | 0640);
     struct state *status = shmat(mem_id, NULL, 0);
     
@@ -70,9 +69,9 @@ int main() {
 
 
 void userManager(struct state *status, int statusSemaphore, int printSemaphore) {
+    
     while(run) {
-        printf("wokring...\n");
-        sleep(2);
+        
     }
 }
 
@@ -129,7 +128,14 @@ void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
         for(int i; i<promptSize; ++i)
             printf("%c", 8); // backspace prompt symbol
         if(message.priority) {
-            printf("[!!!]");
+            printf("[\033[5;31m"); // flashing red foreground for priority symbol
+            printf("!!!");
+            printf("\033[0m]");
+        } else if(message.mtype == PRIORITY_PORT) {
+            // message on priority port without priority flag is message from server
+            printf("[\033[32m"); // green foreground for Server messages
+            printf("SERVER");
+            printf("\033[0m]");
         }
     }    
         
