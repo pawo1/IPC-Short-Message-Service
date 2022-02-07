@@ -22,13 +22,21 @@ struct msgbuf {
     int end;
 };
 
+struct cmdbuf {
+  long mtype;
+  char command[MAX_COMMAND];
+  char arguments[MAX_ARGS][MAX_COMMAND];
+};
+
 struct state {
+    int logged;
     char name[MAX_LOGIN_LENGTH+1];
     int choosenUser;
     int choosenGroup;
     char prompt[MAX_LOGIN_LENGTH+1];
     int promptSize;
     int privateQueue;
+    int publicQueue;
 };
 
 struct sembuf p = { 0, -1, SEM_UNDO}; 
@@ -42,12 +50,13 @@ union semun {
 
 void run_changer();
 
-int login(int logged, char *name, int authQueue, int printSemaphore);
+int login(char *name, int authQueue, int printSemaphore);
 void logout();
 
 void messageReceiver(struct state *status, int statusSemaphore, int printSemaphore);
 void userManager(struct state *status, int statusSemaphore, int printSemaphore);
 void proceedMessage(struct msgbuf message, char * prompt, int promptSize);
-void printPrompt(char * prompt);
 
+void printPrompt(char * prompt);
+void printSystemInfo(char * message, int sem);
 #endif

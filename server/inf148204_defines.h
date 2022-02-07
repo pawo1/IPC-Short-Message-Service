@@ -17,7 +17,9 @@
 #define MAX_PASSWORD_LENGTH 32
 #define MAX_GROUP_NAME 32
 
-#define MAX_COMMAND 16
+#define MAX_COMMAND 32
+#define MAX_ARGS 2
+
 #define MAX_BUFFER 512
 
 #define OFFSET 10

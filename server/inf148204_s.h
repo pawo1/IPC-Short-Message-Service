@@ -24,6 +24,12 @@ struct msgbuf {
     int end;
 };
 
+struct cmdbuf {
+  long mtype;
+  char command[MAX_COMMAND];
+  char arguments[MAX_ARGS][MAX_COMMAND];
+};
+
 void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues);
 void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues);
 

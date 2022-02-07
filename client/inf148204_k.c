@@ -12,7 +12,11 @@
 #include <sys/shm.h>
 #include <sys/sem.h>
 
+#include <errno.h>
+
 #include "inf148204_k.h"
+
+
 
 int run;
 
@@ -22,12 +26,14 @@ void run_changer() {
 
 int main() {
 
-    int logged = 0;
-    
-    int auth_queue = msgget(99901, 0640);
+    int authQueue = msgget(99901, 0640);
     
         
     int mem_id = shmget(ftok(".", 99901), sizeof(struct state), IPC_CREAT | 0640);
+    if(mem_id == -1) {
+        printf("Cannot create shared memory\n");
+        return -1;
+    }
     struct state *status = shmat(mem_id, NULL, 0);
     
     int statusSemaphore = semget(ftok(".", 99902), sizeof(union semun), IPC_CREAT | 0640);
@@ -42,8 +48,10 @@ int main() {
         return -1;
     }
     
-    if(auth_queue >= 0) {
-        status->privateQueue = login(logged, status->name, auth_queue, printSemaphore);
+    if(authQueue >= 0) {
+        status->publicQueue = authQueue;
+        status->privateQueue = login(status->name, authQueue, printSemaphore);
+        status->logged = 1;
         strcpy(status->prompt, "Menu");
         status->promptSize = 4;
         status->choosenGroup = -1;
@@ -123,7 +131,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                     buffer[i-3] = '\0';
                 }
                 
-                if(buffer[0] != '/' && id != -1) {
+                if( (buffer[0] != '/' || message.priority) && id != -1) {
                     //send partial message
                     buffer[MAX_BUFFER] = '\0';
                     
@@ -151,15 +159,99 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             }
         } while(c != '\n');
         
-        if(buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == ' ' && start == 1) { // treat priority as message not command
+        if(buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == ' ' && buffer[3] != '\n' && start == 1) { // treat priority as message not command
             message.priority = 1;
             strcpy(buffer, buffer + 3);
             i -= 3;
         }
         
-        if(buffer[0] == '/' && start == 1) { //handle commands
+        if(buffer[0] == '/' && start == 1 && !message.priority) { //handle commands, priority trim first command
             
-        } else if(buffer[0] != '\n' && id != -1) { // prevent sending empty messages
+            struct cmdbuf cmdmsg;
+            cmdmsg.mtype = COMMAND_PORT;
+            semop(statusSemaphore, &p, 1);
+            int queue = status->privateQueue;
+            semop(statusSemaphore, &v, 1);
+            
+            int result;
+            char *split;
+            buffer[i-1] = '\0'; // delete newline
+            split = strtok(buffer, " ");
+            strcpy(cmdmsg.command, split + 1); // copy without '/'
+            
+            for(int j=0; j<MAX_ARGS; ++j) {
+                split = strtok(NULL, " ");
+                if(split != NULL)
+                    strcpy(cmdmsg.arguments[j], split);
+                else
+                    cmdmsg.arguments[j][0] = '\0';
+            }
+            
+            if(strcmp(cmdmsg.command, "help") == 0) {
+                
+            } else if(strcmp(cmdmsg.command, "login") == 0) {
+                
+                char name[MAX_LOGIN_LENGTH];
+                
+                
+                semop(statusSemaphore, &p, 1);
+                int authQueue = status->publicQueue;
+                int logged = status->logged;
+                semop(statusSemaphore, &v, 1);
+                if(logged)
+                    printf("You're logged in. Logout first, to change user\n");
+                else {
+                    result = login(name, authQueue, printSemaphore);
+                    
+                    if(result != -1) {
+                        semop(statusSemaphore, &p, 1);
+                        status->logged = 1;
+                        status->privateQueue = result;
+                        semop(statusSemaphore, &v, 1);
+                    }
+                
+                }
+            } else if(strcmp(cmdmsg.command, "logout") == 0) {
+                semop(statusSemaphore, &p, 1);
+                status->logged = 0;
+                int authQueue = status->publicQueue;
+                semop(statusSemaphore, &v, 1);
+                result = msgsnd(queue, &cmdmsg, sizeof(struct msgbuf)-sizeof(long), 0);
+                if(result == -1) {
+                    printSystemInfo("Cannot pass command to server\n", printSemaphore);
+                } else {
+                    char name[MAX_LOGIN_LENGTH];
+                    
+                    result = login(name, authQueue, printSemaphore);
+                    if(result != -1) {
+                        semop(statusSemaphore, &p, 1);
+                        status->logged = 1;
+                        status->privateQueue = result;
+                        semop(statusSemaphore, &v, 1);
+                    }
+                }
+                
+            } else if(strcmp(cmdmsg.command, "list") == 0) {
+                
+            } else if(strcmp(cmdmsg.command, "group") == 0) {
+                
+            } else if(strcmp(cmdmsg.command, "msg") == 0) {
+                
+            } else if(strcmp(cmdmsg.command, "menu") == 0) {
+                
+            } else if(strcmp(cmdmsg.command, "p") == 0) {
+                printSystemInfo("Priority message is empty, type something after /p \n", printSemaphore);
+            } /*else if(strcmp(cmdmsg.command, "block") == 0) {
+            
+            } else if(strcmp(cmdmsg.command, "unblock") == 0) {
+                
+            } */ else {
+                printSystemInfo("Unsupported command!\nType /help for list of available commands\n", printSemaphore);
+            }
+            
+            
+            
+        } else if(buffer[0] != '\n' && start == 1 && id != -1) { // prevent sending empty messages
             buffer[i] = '\0';
             strncpy(message.msg, buffer, MAX_BUFFER);
             message.start = start;
@@ -167,9 +259,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             
             msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), 0);
         } else {
-            semop(printSemaphore, &p, 1);
-            printf("\033[31mJoin chat to send messages!\nType /help for more informations\n\033[0m");
-            semop(printSemaphore, &v, 1);
+            printSystemInfo("Join chat to send messages!\nType /help for more informations\n", printSemaphore);
         }
         
     }
@@ -256,16 +346,18 @@ void printPrompt(char * prompt) {
     fflush(stdout);
 }
 
-int login(int logged, char * name, int auth_queue, int printSemaphore) {
+void printSystemInfo(char * message, int sem) {
+    semop(sem, &p, 1);
+    printf("\033[31m%s\033[0m", message);
+    semop(sem, &v, 1);
+}
+
+int login(char * name, int auth_queue, int printSemaphore) {
         char login[MAX_LOGIN_LENGTH+1];
         char password[MAX_PASSWORD_LENGTH+1];
-    
-        if(logged) {
-            printf("You're logged in. Logout first, to change user");
-            return -1;
-        }
+        
         int client_queue = msgget(getpid(), 0640 | IPC_CREAT);
-        while(!logged) {
+        while(1) {
             semop(printSemaphore, &p, 1);
             printf("Login:");
             fflush(stdout);
@@ -301,13 +393,9 @@ int login(int logged, char * name, int auth_queue, int printSemaphore) {
             if(message.to != -1) {
                 // succesfull login
                 strncpy(name, login, MAX_LOGIN_LENGTH);
-                logged = 1;
                 msgctl(client_queue, IPC_RMID, NULL);
                 return message.to; // private queue for user
             }
-            
-
-            
             
         }
         return -1;
