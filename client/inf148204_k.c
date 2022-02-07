@@ -43,7 +43,10 @@ int main() {
     }
     
     if(auth_queue > 0) {
-        status->privateQueue = login(logged, auth_queue);
+        status->privateQueue = login(logged, auth_queue, printSemaphore);
+        strcpy(status->prompt, "Menu");
+        status->promptSize = 4;
+        
     } else {
         printf("Server is not available\n");
         return -1;
@@ -70,7 +73,16 @@ int main() {
 
 void userManager(struct state *status, int statusSemaphore, int printSemaphore) {
     
+    char prompt[MAX_LOGIN_LENGTH];
+    
     while(run) {
+        semop(statusSemaphore, &p, 1);
+        strcpy(prompt, status->prompt);
+        semop(statusSemaphore, &v, 1);
+        
+        semop(printSemaphore, &p, 1);
+        printPrompt(prompt);
+        semop(printSemaphore, &p, 1);
         
     }
 }
@@ -125,8 +137,9 @@ void messageReceiver(struct state *status, int statusSemaphore, int printSemapho
 
 void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
     if(message.start) {
-        for(int i; i<promptSize; ++i)
-            printf("%c", 8); // backspace prompt symbol
+        for(int i=0; i<promptSize+3; ++i)
+            printf("\b \b"); // backspace prompt symbol 4 more characters for [ and ]> elements
+            
         if(message.priority) {
             printf("[\033[5;31m"); // flashing red foreground for priority symbol
             printf("!!!");
@@ -135,18 +148,23 @@ void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
             // message on priority port without priority flag is message from server
             printf("[\033[32m"); // green foreground for Server messages
             printf("SERVER");
-            printf("\033[0m]");
+            printf("\033[0m] ");
         }
     }    
         
     printf("%s", message.msg);
         
-    if(message.end) {    
-        printf("\n%s", prompt);
+    if(message.end) {
+        printPrompt(prompt);
     }
 }
 
-int login(int logged, int auth_queue) {
+void printPrompt(char * prompt) {
+    printf("[\033[34m%s\033[0m]>", prompt);
+    fflush(stdout);
+}
+
+int login(int logged, int auth_queue, int printSemaphore) {
         char login[MAX_LOGIN_LENGTH];
         char password[MAX_PASSWORD_LENGTH];
     
@@ -156,10 +174,14 @@ int login(int logged, int auth_queue) {
         }
         int client_queue = msgget(getpid(), 0640 | IPC_CREAT);
         while(!logged) {
+            semop(printSemaphore, &p, 1);
             printf("Login:");
+            fflush(stdout);
             scanf("%s", login);
             printf("Password:");
+            fflush(stdout);
             scanf("%s", password);
+            semop(printSemaphore, &v, 1);
             
             struct authbuf auth;
             struct msgbuf message;
@@ -171,13 +193,28 @@ int login(int logged, int auth_queue) {
             msgsnd(auth_queue, &auth, sizeof(auth)-sizeof(long), 0);
             msgrcv(client_queue, &message, sizeof(message)-sizeof(long), 0, 0);
             
-            printf("%s", message.msg);
-            if(message.mtype != 1) {
+            semop(printSemaphore, &p, 1);
+            printf("       ");
+            fflush(stdout);
+            proceedMessage(message, "Menu", 4);
+            semop(printSemaphore, &v, 1);
+            
+            semop(printSemaphore, &p, 1);
+            for(int i=0; i<7; ++i)
+                printf("\b \b");
+            fflush(stdout);
+            semop(printSemaphore, &v, 1);
+            
+            
+            if(message.to != -1) {
                 // succesfull login
                 logged = 1;
                 msgctl(client_queue, IPC_RMID, NULL);
-                return message.mtype; // private queue for user
+                return message.to; // private queue for user
             }
+            
+
+            
             
         }
         return -1;

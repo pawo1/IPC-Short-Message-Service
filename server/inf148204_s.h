@@ -15,12 +15,15 @@ struct authbuf {
 
 struct msgbuf {
     long mtype;
-    int from;
-    int to;
-    int id_group;
+    int priority;
+    char from[MAX_LOGIN_LENGTH];
     char msg[MAX_BUFFER];
+    int to;
+    int start;
     int end;
 };
+
+void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues);
 
 void freeMemory(struct user **users, struct group **groups);
 

@@ -28,7 +28,7 @@ void run_changer() {
 int main(int argc, char *argv[]) {
     
     int result;
-    int loaded_users;
+    int loadedUsers;
     
     char config[] = "test.txt";
     
@@ -54,46 +54,46 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     
-    loaded_users = result;
-    int *message_queues = malloc(sizeof(int)*loaded_users);
+    loadedUsers = result;
+    int *messageQueues = malloc(sizeof(int)*loadedUsers);
     
     
     printLogTime();
-    printf("Server loaded %d users\n", loaded_users);
+    printf("Server loaded %d users\n", loadedUsers);
     
     //TODO: IPC_EXCL when all Signals are managed 
-    int auth_queue = msgget(99901, 0640 | IPC_CREAT);
+    int authQueue = msgget(99901, 0640 | IPC_CREAT);
         
-    if(auth_queue == -1 && errno == EEXIST) {
+    if(authQueue == -1 && errno == EEXIST) {
         printLogTime();
         printf("Server queue already exist\n\t\t\tis there another server process running?\n");
         printLogTime();
         printf("Stopping the server...\n");
         freeMemory(users, groups);
-        free(message_queues);
+        free(messageQueues);
         return -1;
-    } else if(auth_queue == -1) {
+    } else if(authQueue == -1) {
         printLogTime();
         printf("Uncatched error %d, during creating server queue", errno);
         printLogTime();
         printf("Stopping the server...\n");
         freeMemory(users, groups);
-        free(message_queues);
+        free(messageQueues);
         return -1;
     }
     
     printLogTime();
-    printf("Server listening on authentication queue no %d\n", auth_queue);
+    printf("Server listening on authentication queue no %d\n", authQueue);
     
     
     
-    for(int i=0; i<loaded_users; ++i) {
-        message_queues[i] = msgget(ftok(config, i), 0640 | IPC_CREAT);
-        if(message_queues[i] == -1) {
+    for(int i=0; i<loadedUsers; ++i) {
+        messageQueues[i] = msgget(ftok(config, i), 0640 | IPC_CREAT);
+        if(messageQueues[i] == -1) {
             printLogTime();
             printf("Error during creating queues for users\n");
             freeMemory(users, groups);
-            free(message_queues);
+            free(messageQueues);
             return -1;
         }
     }
@@ -105,37 +105,53 @@ int main(int argc, char *argv[]) {
     printf("Server joining run loop. Ctrl+C to stop work\n");
     
     while(run) {
-        if(msgrcv(auth_queue, &auth, sizeof(auth)-sizeof(long), 0, IPC_NOWAIT) > 0) {
+        proceedAuth(users, loadedUsers, authQueue, messageQueues);
+        
+    }
+    
+    printf("\n");
+    printLogTime();
+    printf("Stopping the server. Thanks for using chat\n");
+    msgctl(authQueue, IPC_RMID, NULL);
+    for(int i=0; i<loadedUsers; ++i) {
+        msgctl(messageQueues[i], IPC_RMID, NULL);
+    }
+    
+    freeMemory(users, groups);
+    free(messageQueues);
+    
+    return 0;
+}
+
+void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues) {
+    
+    struct authbuf auth;
+    struct msgbuf message;
+    
+    if(msgrcv(authQueue, &auth, sizeof(auth)-sizeof(long), 0, IPC_NOWAIT) > 0) {
             int find = 0;
-            for(int i=0; i<loaded_users; ++i) {
+            
+            message.mtype = PRIORITY_PORT;
+            message.priority = 0; // messages from server are on priority port but without flag
+            message.start = 1;
+            message.end = 1;
+            message.to = -1;
+            
+            for(int i=0; i<loadedUsers; ++i) {
+                
                 if(strcmp(auth.login, users[i]->login) == 0) {
                     find = 1;
                     if(!users[i]->logged) {
                         if(strcmp(auth.password, users[i]->password) == 0) {
                             users[i]->logged = 1;
-                            sprintf(message.msg, "[Server]\tWelcome back %s!\n", users[i]->login);
-                            message.mtype = 2;
-                            message.end = 1;
-                            message.from = -1;
-                            message.to = message_queues[i]; // adress for private queue
+                            sprintf(message.msg, "Welcome back %s!\n", users[i]->login);
+                            message.to = messageQueues[i]; // adress for private queue
                         } else {
-                            strncpy(message.msg, "[Server]\tWrong Password!\n", MAX_BUFFER);
-                            message.mtype = 1;
-                            message.end = 1;
-                            message.from = -1;
-                            message.to = -1;
-                            
-                            printLogTime();
-                            printf("Password: %s\t Get: %s\n", auth.password, users[i]->password);
+                            strncpy(message.msg, "Wrong Password!\n", MAX_BUFFER);
                         }
                     }
                     else {
-                        strncpy(message.msg, "[Server]\tUser already logged on another client\n", MAX_BUFFER);
-                        message.mtype = 1;
-                        message.end = 1;
-                        message.from = -1;
-                        message.to = -1;
-                        
+                        strncpy(message.msg, "User already logged on another client\n", MAX_BUFFER);
                     }
                     msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
                     break;
@@ -143,29 +159,10 @@ int main(int argc, char *argv[]) {
             }
             if(!find) {
                 // wrong username
-                strncpy(message.msg, "[Server]\tWrong Login\n", MAX_BUFFER);
-                message.mtype = 1;
-                message.end = 1;
-                message.from = -1;
-                message.to = -1;
+                strncpy(message.msg, "Wrong Login\n", MAX_BUFFER);
                 msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
             }
         }
-        
-    }
-    
-    printf("\n");
-    printLogTime();
-    printf("Stopping the server. Thanks for using chat\n");
-    msgctl(auth_queue, IPC_RMID, NULL);
-    for(int i=0; i<loaded_users; ++i) {
-        msgctl(message_queues[i], IPC_RMID, NULL);
-    }
-    
-    freeMemory(users, groups);
-    free(message_queues);
-    
-    return 0;
 }
 
 void freeMemory(struct user **users, struct group **groups) {

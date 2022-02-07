@@ -16,6 +16,7 @@ struct msgbuf {
     int priority;
     char from[MAX_LOGIN_LENGTH];
     char msg[MAX_BUFFER];
+    int to;
     int start;
     int end;
 };
@@ -40,11 +41,12 @@ union semun {
 
 void run_changer();
 
-int login(int logged, int authQueue);
+int login(int logged, int authQueue, int printSemaphore);
 void logout();
 
 void messageReceiver(struct state *status, int statusSemaphore, int printSemaphore);
 void userManager(struct state *status, int statusSemaphore, int printSemaphore);
 void proceedMessage(struct msgbuf message, char * prompt, int promptSize);
+void printPrompt(char * prompt);
 
 #endif
