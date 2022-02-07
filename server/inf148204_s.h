@@ -7,8 +7,8 @@
 
 struct authbuf {
     long mtype;
-    char login[MAX_LOGIN_LENGTH];
-    char password[MAX_PASSWORD_LENGTH];
+    char login[MAX_LOGIN_LENGTH+1];
+    char password[MAX_PASSWORD_LENGTH+1];
     int client_queue;
 };
 
@@ -16,14 +16,19 @@ struct authbuf {
 struct msgbuf {
     long mtype;
     int priority;
-    char from[MAX_LOGIN_LENGTH];
-    char msg[MAX_BUFFER];
+    char from[MAX_LOGIN_LENGTH+1];
+    char msg[MAX_BUFFER+1];
+    int msgGroup;
     int to;
     int start;
     int end;
 };
 
 void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues);
+void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues);
+
+
+int sendMessage(int queue, int port, char * message);
 
 void freeMemory(struct user **users, struct group **groups);
 

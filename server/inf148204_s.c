@@ -98,15 +98,14 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    struct msgbuf message;
-    struct authbuf auth;
     
     printLogTime();
     printf("Server joining run loop. Ctrl+C to stop work\n");
     
     while(run) {
         proceedAuth(users, loadedUsers, authQueue, messageQueues);
-        
+       // proceedMessages(users, loadedUsers, groups, messageQueues);
+        //proceedCommands
     }
     
     printf("\n");
@@ -163,6 +162,67 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
                 msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
             }
         }
+}
+
+void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues) {
+
+    struct msgbuf message;
+    int result, uid, queue;
+    
+
+    for(int i=0; i<loadedUsers; ++i) {
+        if(msgrcv(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), MESSAGE_PORT, IPC_NOWAIT) > 0) {
+            if(message.msgGroup) {
+                int size = groups[message.to]->groupSize;
+                for(int j=0; j<size; ++j) {
+                    uid = groups[message.to]->userId[j];
+                    queue = messageQueues[uid];
+                    message.mtype = (message.priority ? PRIORITY_PORT : users[uid]->id);
+                    result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                    if(result == -1) {
+                        if(errno == EAGAIN) {
+                            sendMessage(messageQueues[i], PRIORITY_PORT, "Couldn't deliver message, queue is full\n");
+                        } else {
+                            sendMessage(messageQueues[i], PRIORITY_PORT, "Error during sending message\n");
+                        }
+                    } else {
+                        sendMessage(messageQueues[i], PRIORITY_PORT, "Message delivered\n");
+                    }
+                    // TODO Better messages and logs on server
+                }
+            } else {
+                uid = users[message.to]->id;
+                queue = messageQueues[message.to];
+                message.mtype = (message.priority ? PRIORITY_PORT : uid);
+                result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                if(result == -1) {
+                    if(errno == EAGAIN) {
+                        sendMessage(messageQueues[i], PRIORITY_PORT, "Couldn't deliver message, queue is full\n");
+                    } else {
+                        sendMessage(messageQueues[i], PRIORITY_PORT, "Error during sending message\n");
+                    }
+                } else {
+                    sendMessage(messageQueues[i], PRIORITY_PORT, "Message delivered\n");
+                }
+            }
+                
+        }
+    }
+}
+
+int sendMessage(int queue, int port, char * message) {
+    struct msgbuf answer;
+    
+    // TODO asnwers longer than 512 characters
+    answer.start = 1;
+    answer.end = 1;
+    answer.mtype = port;
+    answer.msgGroup = -1;
+    strncpy(answer.msg, message, MAX_BUFFER);
+    answer.msg[MAX_BUFFER] = '\0';
+    
+    return msgsnd(queue, &answer, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+    
 }
 
 void freeMemory(struct user **users, struct group **groups) {

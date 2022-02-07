@@ -73,16 +73,69 @@ int main() {
 
 void userManager(struct state *status, int statusSemaphore, int printSemaphore) {
     
-    char prompt[MAX_LOGIN_LENGTH];
+    int queue;
+    char name[MAX_LOGIN_LENGTH+1];
+    char buffer[MAX_BUFFER+1];
+    char c;
+    int i, start, id;
+    
+    scanf("%c", &c);
+    c = 'a';
+    
+    struct msgbuf message;
+    
+    char prompt[MAX_LOGIN_LENGTH+1];
     
     while(run) {
         semop(statusSemaphore, &p, 1);
+        queue = status->privateQueue;
+        id = (status->choosenUser != -1 ? status->choosenUser : (status->choosenGroup != -1 ? status->choosenGroup : -1));
+        strcpy(name, status->name);
         strcpy(prompt, status->prompt);
         semop(statusSemaphore, &v, 1);
         
         semop(printSemaphore, &p, 1);
         printPrompt(prompt);
-        semop(printSemaphore, &p, 1);
+        semop(printSemaphore, &v, 1);
+        
+        start = 1;
+        i = 0;
+        
+        message.to = id;
+        message.mtype = MESSAGE_PORT;
+        message.priority = 0;
+        strcpy(message.from, name);
+        do {
+            scanf("%c", &c);
+            buffer[i] = c;
+            i++;
+            if(i == MAX_BUFFER) {
+                if(buffer[0] != '/') {
+                    //send partial message
+                    buffer[MAX_BUFFER] = '\0';
+                    
+                    strncpy(message.msg, buffer, MAX_BUFFER);
+                    message.start = start;
+                    message.end = 0;
+
+                    msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), 0);
+                    
+                    start = 0;
+                    i = 0;
+                }
+            }
+        } while(c != '\n');
+        
+        if(buffer[0] == '/' && start == 1) { //handle commands
+        
+        } else if(buffer[0] != '\n') { // prevent sending empty messages
+            buffer[i] = '\0';
+            strncpy(message.msg, buffer, MAX_BUFFER);
+            message.start = start;
+            message.end = 1;
+            
+            msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), 0);
+        }
         
     }
 }
@@ -94,13 +147,10 @@ void messageReceiver(struct state *status, int statusSemaphore, int printSemapho
     int result;
     char prompt[20];
     
-    semop(statusSemaphore, &p, 1);
-    queue = status->privateQueue;
-    semop(statusSemaphore, &v, 1);
-    
     while(run) {
         
         semop(statusSemaphore, &p, 1);
+            queue = status->privateQueue;
             id = (status->choosenUser != -1 ? status->choosenUser : (status->choosenGroup != -1 ? status->choosenGroup : -1));
             promptSize = status->promptSize;
             strcpy(prompt, status->prompt);
@@ -144,11 +194,14 @@ void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
             printf("[\033[5;31m"); // flashing red foreground for priority symbol
             printf("!!!");
             printf("\033[0m]");
-        } else if(message.mtype == PRIORITY_PORT) {
+        } 
+        if(message.mtype == PRIORITY_PORT) {
             // message on priority port without priority flag is message from server
             printf("[\033[32m"); // green foreground for Server messages
             printf("SERVER");
             printf("\033[0m] ");
+        } else {
+            printf("[%s] ", message.from);
         }
     }    
         
@@ -160,6 +213,10 @@ void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
 }
 
 void printPrompt(char * prompt) {
+    
+  //  for(int i=0; i<8; ++i)
+   //     printf("\b \b"); // backspace prompt symbol 4 more characters for [ and ]> elements
+    
     printf("[\033[34m%s\033[0m]>", prompt);
     fflush(stdout);
 }

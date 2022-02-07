@@ -7,12 +7,14 @@ struct user {
     char login[MAX_LOGIN_LENGTH+1];
     char password[MAX_PASSWORD_LENGTH+1];
     int logged;
+    int id; 
 };
 
 struct group {
     char name[MAX_GROUP_NAME+1];
     int userId[MAX_USERS];
     int groupSize;
+    int id;
 };
 
 int loadConfig(char *filename, struct user **users, int userNum, struct group **groups, int groupNum);

@@ -5,8 +5,8 @@
 
 struct authbuf {
     long mtype;
-    char login[MAX_LOGIN_LENGTH];
-    char password[MAX_PASSWORD_LENGTH];
+    char login[MAX_LOGIN_LENGTH+1];
+    char password[MAX_PASSWORD_LENGTH+1];
     int client_queue;
 };
 
@@ -14,18 +14,19 @@ struct authbuf {
 struct msgbuf {
     long mtype;
     int priority;
-    char from[MAX_LOGIN_LENGTH];
-    char msg[MAX_BUFFER];
+    char from[MAX_LOGIN_LENGTH+1];
+    char msg[MAX_BUFFER+1];
+    int msgGroup;
     int to;
     int start;
     int end;
 };
 
 struct state {
-    int mainMenu;
+    char name[MAX_LOGIN_LENGTH+1];
     int choosenUser;
     int choosenGroup;
-    char prompt[40];
+    char prompt[MAX_LOGIN_LENGTH+1];
     int promptSize;
     int privateQueue;
 };
