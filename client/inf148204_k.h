@@ -42,7 +42,7 @@ union semun {
 
 void run_changer();
 
-int login(int logged, int authQueue, int printSemaphore);
+int login(int logged, char *name, int authQueue, int printSemaphore);
 void logout();
 
 void messageReceiver(struct state *status, int statusSemaphore, int printSemaphore);

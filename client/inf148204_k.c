@@ -42,10 +42,12 @@ int main() {
         return -1;
     }
     
-    if(auth_queue > 0) {
-        status->privateQueue = login(logged, auth_queue, printSemaphore);
+    if(auth_queue >= 0) {
+        status->privateQueue = login(logged, status->name, auth_queue, printSemaphore);
         strcpy(status->prompt, "Menu");
         status->promptSize = 4;
+        status->choosenGroup = -1;
+        status->choosenUser = -1;
         
     } else {
         printf("Server is not available\n");
@@ -77,7 +79,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
     char name[MAX_LOGIN_LENGTH+1];
     char buffer[MAX_BUFFER+1];
     char c;
-    int i, start, id;
+    int i, start, id, msgGroup;
     
     scanf("%c", &c);
     c = 'a';
@@ -89,7 +91,8 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
     while(run) {
         semop(statusSemaphore, &p, 1);
         queue = status->privateQueue;
-        id = (status->choosenUser != -1 ? status->choosenUser : (status->choosenGroup != -1 ? status->choosenGroup : -1));
+        id = (status->choosenUser > 0 ? status->choosenUser : (status->choosenGroup > 0 ? status->choosenGroup : -1));
+        msgGroup = (status->choosenGroup > 0 ? 1 : 0);
         strcpy(name, status->name);
         strcpy(prompt, status->prompt);
         semop(statusSemaphore, &v, 1);
@@ -101,16 +104,26 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
         start = 1;
         i = 0;
         
-        message.to = id;
+        message.to = 0;// id;
+        message.msgGroup = msgGroup; // flag for group messages
         message.mtype = MESSAGE_PORT;
         message.priority = 0;
         strcpy(message.from, name);
+        
+        
         do {
             scanf("%c", &c);
             buffer[i] = c;
             i++;
             if(i == MAX_BUFFER) {
-                if(buffer[0] != '/') {
+                
+                if(buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == ' ' && start == 1) {
+                    message.priority = 1;
+                    strcpy(buffer, buffer + 3);
+                    buffer[i-3] = '\0';
+                }
+                
+                if(buffer[0] != '/' && id != -1) {
                     //send partial message
                     buffer[MAX_BUFFER] = '\0';
                     
@@ -122,19 +135,41 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                     
                     start = 0;
                     i = 0;
+                } else if(buffer[0] == '/' || id == -1){
+                    
+                    semop(printSemaphore, &p, 1);
+                    if(buffer[0] == '/')
+                        printf("\033[31mCommand line is too long\n\033[0m");
+                    else if(id == -1)
+                        printf("\033[31mJoin chat to send messages!\nType /help for more informations\033[0m");
+                    semop(printSemaphore, &v, 1);
+                    
+                    while(c != '\n') { // clear command from buffer
+                        scanf("%c", &c);
+                    }
                 }
             }
         } while(c != '\n');
         
-        if(buffer[0] == '/' && start == 1) { //handle commands
+        if(buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == ' ' && start == 1) { // treat priority as message not command
+            message.priority = 1;
+            strcpy(buffer, buffer + 3);
+            i -= 3;
+        }
         
-        } else if(buffer[0] != '\n') { // prevent sending empty messages
+        if(buffer[0] == '/' && start == 1) { //handle commands
+            
+        } else if(buffer[0] != '\n' && id != -1) { // prevent sending empty messages
             buffer[i] = '\0';
             strncpy(message.msg, buffer, MAX_BUFFER);
             message.start = start;
             message.end = 1;
             
             msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), 0);
+        } else {
+            semop(printSemaphore, &p, 1);
+            printf("\033[31mJoin chat to send messages!\nType /help for more informations\n\033[0m");
+            semop(printSemaphore, &v, 1);
         }
         
     }
@@ -151,7 +186,7 @@ void messageReceiver(struct state *status, int statusSemaphore, int printSemapho
         
         semop(statusSemaphore, &p, 1);
             queue = status->privateQueue;
-            id = (status->choosenUser != -1 ? status->choosenUser : (status->choosenGroup != -1 ? status->choosenGroup : -1));
+            id = (status->choosenUser > 0 ? status->choosenUser : (status->choosenGroup > 0 ? status->choosenGroup : -1));
             promptSize = status->promptSize;
             strcpy(prompt, status->prompt);
         semop(statusSemaphore, &v, 1);
@@ -195,7 +230,7 @@ void proceedMessage(struct msgbuf message, char *prompt, int promptSize) {
             printf("!!!");
             printf("\033[0m]");
         } 
-        if(message.mtype == PRIORITY_PORT) {
+        if(message.mtype == PRIORITY_PORT && !message.priority) {
             // message on priority port without priority flag is message from server
             printf("[\033[32m"); // green foreground for Server messages
             printf("SERVER");
@@ -221,9 +256,9 @@ void printPrompt(char * prompt) {
     fflush(stdout);
 }
 
-int login(int logged, int auth_queue, int printSemaphore) {
-        char login[MAX_LOGIN_LENGTH];
-        char password[MAX_PASSWORD_LENGTH];
+int login(int logged, char * name, int auth_queue, int printSemaphore) {
+        char login[MAX_LOGIN_LENGTH+1];
+        char password[MAX_PASSWORD_LENGTH+1];
     
         if(logged) {
             printf("You're logged in. Logout first, to change user");
@@ -265,6 +300,7 @@ int login(int logged, int auth_queue, int printSemaphore) {
             
             if(message.to != -1) {
                 // succesfull login
+                strncpy(name, login, MAX_LOGIN_LENGTH);
                 logged = 1;
                 msgctl(client_queue, IPC_RMID, NULL);
                 return message.to; // private queue for user

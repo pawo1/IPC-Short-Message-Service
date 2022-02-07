@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
     
     while(run) {
         proceedAuth(users, loadedUsers, authQueue, messageQueues);
-       // proceedMessages(users, loadedUsers, groups, messageQueues);
+        proceedMessages(users, loadedUsers, groups, messageQueues);
         //proceedCommands
     }
     
@@ -181,12 +181,12 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                     result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                     if(result == -1) {
                         if(errno == EAGAIN) {
-                            sendMessage(messageQueues[i], PRIORITY_PORT, "Couldn't deliver message, queue is full\n");
+                            sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
                         } else {
-                            sendMessage(messageQueues[i], PRIORITY_PORT, "Error during sending message\n");
+                            sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
                         }
                     } else {
-                        sendMessage(messageQueues[i], PRIORITY_PORT, "Message delivered\n");
+                        sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
                     }
                     // TODO Better messages and logs on server
                 }
@@ -197,12 +197,12 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                 result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                 if(result == -1) {
                     if(errno == EAGAIN) {
-                        sendMessage(messageQueues[i], PRIORITY_PORT, "Couldn't deliver message, queue is full\n");
+                        sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
                     } else {
-                        sendMessage(messageQueues[i], PRIORITY_PORT, "Error during sending message\n");
+                        sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
                     }
                 } else {
-                    sendMessage(messageQueues[i], PRIORITY_PORT, "Message delivered\n");
+                    sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
                 }
             }
                 
@@ -210,12 +210,13 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
     }
 }
 
-int sendMessage(int queue, int port, char * message) {
+int sendMessage(int queue, int port, int priority, char * message) {
     struct msgbuf answer;
     
     // TODO asnwers longer than 512 characters
     answer.start = 1;
     answer.end = 1;
+    answer.priority = priority;
     answer.mtype = port;
     answer.msgGroup = -1;
     strncpy(answer.msg, message, MAX_BUFFER);

@@ -28,7 +28,7 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
 void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues);
 
 
-int sendMessage(int queue, int port, char * message);
+int sendMessage(int queue, int port, int priority, char * message);
 
 void freeMemory(struct user **users, struct group **groups);
 
