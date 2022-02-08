@@ -66,7 +66,7 @@ int main() {
     
     int child_id = fork();
     
-    if(child_id != 0) {
+    if(child_id == 0) {
         signal(SIGINT, run_changer);
         messageReceiver(status, statusSemaphore, printSemaphore);
         shmdt(status);
@@ -107,15 +107,18 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
         msgGroup = (status->choosenGroup > 0 ? 1 : 0);
         
         strcpy(name, status->name);
-        if(status->choosenGroup > 0 ) {
+        if(msgGroup) {
             strcpy(name+strlen(status->name), "->");
             strcpy(name+strlen(status->name)+2, status->prompt);
-        }
+        } 
         strcpy(prompt, status->prompt);
         semop(statusSemaphore, &v, 1);
-        
+
         semop(printSemaphore, &p, 1);
-        printPrompt(name, prompt);
+        if(msgGroup)
+            printPrompt(name, NULL);
+        else
+            printPrompt(name, prompt);
         semop(printSemaphore, &v, 1);
         
         start = 1;
@@ -278,6 +281,14 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                 
             } else if(strcmp(cmdmsg.command, "list") == 0 || strcmp(cmdmsg.command, "group") == 0) {
 /* list / group - only passing to server*/
+                semop(statusSemaphore, &p, 1);
+                if(strcmp(cmdmsg.arguments[0], "leave") == 0 && strcmp(status->prompt, cmdmsg.arguments[1]) == 0) {
+                    strcpy(status->prompt, "Menu");
+                    status->choosenGroup = -1;
+                    status->promptSize = strlen(status->name)+4;
+                }
+                semop(statusSemaphore, &v, 1);
+
                 result = msgsnd(queue, &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), 0);
                 if(result == -1) {
                     printSystemInfo("Cannot pass command to server\n", printSemaphore);
@@ -373,11 +384,11 @@ void messageReceiver(struct state *status, int statusSemaphore, int printSemapho
     while(run) {
         
         
-                semop(statusSemaphore, &p, 1); 
-                queue = status->privateQueue;
-                id = (status->choosenUser > 0 ? status->choosenUser : (status->choosenGroup > 0 ? status->choosenGroup : -1));
-                strcpy(name, status->name);
-                semop(statusSemaphore, &v, 1); 
+        semop(statusSemaphore, &p, 1); 
+        queue = status->privateQueue;
+        id = (status->choosenUser > 0 ? status->choosenUser : (status->choosenGroup > 0 ? status->choosenGroup : -1));
+        strcpy(name, status->name);
+        semop(statusSemaphore, &v, 1); 
         
         // priority messages
         result = msgrcv(queue, &message, sizeof(message)-sizeof(long), PRIORITY_PORT, IPC_NOWAIT);
@@ -457,7 +468,11 @@ void printPrompt(char *name, char * prompt) {
   //  if(name != NULL)
    //     printf("[\033[34m%s->%s\033[0m]>", name, prompt);
    // else
-    printf("[\033[1;34m%s->%s\033[0m]>", name, prompt);
+    if(prompt != NULL)
+        printf("[\033[1;34m%s->%s\033[0m]>", name, prompt);
+    else
+        printf("[\033[1;34m%s\033[0m]>", name);
+        
     fflush(stdout);
 }
 

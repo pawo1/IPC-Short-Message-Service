@@ -111,9 +111,9 @@ int loadGroup(int fd, struct group *groupRegister) {
     strncpy(groupRegister->name, buf, MAX_GROUP_NAME);
     groupRegister->name[MAX_GROUP_NAME] = '\0'; // for trimed names, because strncpy doesn't add it itself
     
-    /*for(int i=0; i<maxUsers; ++i) {
-        groupRegister->userId[i] = -1;
-    }*/
+    for(int i=0; i<MAX_USERS; ++i) {
+        groupRegister->userId[i] = 0;
+    }
     groupRegister->groupSize = 0;
     
     return 0;
@@ -167,8 +167,9 @@ int addGroup(int fd, struct user **users, struct group **groups) {
             for(int j=0; j<MAX_USERS; ++j) {
                 if(strcmp(users[j]->login, userName) == 0) {
                     userFind = 1;
-                    int index = groups[i]->groupSize;
-                    groups[i]->userId[index] = j;
+ //                   int index = groups[i]->groupSize;
+ //                   groups[i]->userId[index] = j;
+                    groups[i]->userId[j] = 1;
                     groups[i]->groupSize++;
                 }
             }

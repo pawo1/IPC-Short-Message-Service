@@ -177,9 +177,14 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
         if(msgrcv(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), MESSAGE_PORT, IPC_NOWAIT) > 0) {
             if(message.msgGroup) {
                 index = message.to - GROUP_OFFSET;
-                int size = groups[index]->groupSize;
-                for(int j=0; j<size; ++j) {
-                    uid = groups[index]->userId[j];
+                //int size = groups[index]->groupSize;
+                //for(int j=0; j<size; ++j) {
+                for(int j=0; j<MAX_USERS; ++j) {
+                    if(groups[index]->userId[j] == 1)
+                        uid = j; //groups[index]->userId[j];
+                    else
+                        continue;
+                    
                     if(uid != i) { // prevent sending messages to itself
                         queue = messageQueues[uid];
                         message.mtype = (message.priority ? PRIORITY_PORT : (index + GROUP_OFFSET)); // information who sent message
@@ -263,13 +268,13 @@ void proceedCommands(struct user **users, int *loadedUsers, struct group **group
                         for(int j=0; j<MAX_GROUPS; ++j) {
                             if(strcmp(cmdmsg.arguments[1], groups[j]->name) == 0) {
                                 find = 1;
-                                int member = 0;
-                                for(int k=0; k<groups[j]->groupSize; ++k) {
+                                int member = groups[j]->userId[i];
+                               /* for(int k=0; k<groups[j]->groupSize; ++k) {
                                     if(groups[j]->userId[k] == i) {
                                         member = 1;
                                         break;
                                     }
-                                }
+                                } */
                                 if(!member) {
                                     cmdmsg.result = -1;
                                     strcpy(message.msg, "You are not member of requested group.\nJoin it first by /group join command\n");
@@ -502,11 +507,79 @@ void proceedCommands(struct user **users, int *loadedUsers, struct group **group
 
                 } else if(strcmp(cmdmsg.command, "group") == 0) {
 /* group */
+                    if(strcmp(cmdmsg.arguments[0], "join") == 0) {
+                        /* join group */
+                        int find = 0;
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            if(strcmp(cmdmsg.arguments[1], groups[j]->name) == 0) {
+                                find = 1;
+                                if(groups[j]->userId[i] == 1) { // already in group 
+                                    strcpy(message.msg, "You're already in requested group! Join chat by /msg group ");
+                                    
+                                    printLogTime();
+                                    printf("User %s requested join group %s, but already joined\n", users[i]->login, groups[j]->name);
+                                } else {
+                                    groups[j]->userId[i] = 1;
+                                    strcpy(message.msg, "Added to group! Now you can join chat with /msg group ");
+                                    
+                                    printLogTime();
+                                    printf("User %s added to group %s\n", users[i]->login, groups[j]->name);
+                                }
+                                strcpy(message.msg+strlen(message.msg), cmdmsg.arguments[1]);
+                                strcpy(message.msg+strlen(message.msg), "\n");
+                            }
+                        }
+                        
+                        if(!find) {
+                            printLogTime();
+                            printf("User %s wanted to join %s group. Group not found in system\n", users[i]->login, cmdmsg.arguments[1]);
+                            
+                            strcpy(message.msg, "Requested group doesn't exist.\nType /group to list available groups\n");
+                        }
+                        
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                        
+                    } else if(strcmp(cmdmsg.arguments[0], "leave") == 0) {
+                        /* leave group */
+                        int find = 0;
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            if(strcmp(cmdmsg.arguments[1], groups[j]->name) == 0) {
+                                find = 1;
+                                if(groups[j]->userId[i] == 0) { // not in group
+                                    strcpy(message.msg, "You're not a member of group ");
+                                    
+                                    printLogTime();
+                                    printf("User %s requested leave group %s, but not a member\n", users[i]->login, groups[j]->name);
+                                } else {
+                                    groups[j]->userId[i] = 0;
+                                    strcpy(message.msg, "Deleted from group ");
+                                    
+                                    printLogTime();
+                                    printf("User %s deleted from group %s\n", users[i]->login, groups[j]->name);
+                                }
+                                strcpy(message.msg+strlen(message.msg), cmdmsg.arguments[1]);
+                                strcpy(message.msg+strlen(message.msg), "\n");
+                            }
+                        }
+                        
+                        if(!find) {
+                            printLogTime();
+                            printf("User %s wanted to leave %s group. Group not found in system\n", users[i]->login, cmdmsg.arguments[1]);
+                            
+                            strcpy(message.msg, "Requested group doesn't exist.\nType /group to list available groups\n");
+                        }
+                        
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                    } else {
+                        strcpy(message.msg, "Wrong command format, check /help for more info\n");
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                    }
+                
                 } else if(strcmp(cmdmsg.command, "block") == 0) {
 /* block */
                 } else if(strcmp(cmdmsg.command, "unblock") == 0) {
 /* unblock */
-                }
+                } 
 
             }
         } 
