@@ -7,7 +7,9 @@ struct user {
     char login[MAX_LOGIN_LENGTH+1];
     char password[MAX_PASSWORD_LENGTH+1];
     int logged;
-    int id; 
+    int blockedUsers[MAX_USERS]; 
+    int blockedGroups[MAX_GROUPS];
+    int tryCounter;
 };
 
 struct group {

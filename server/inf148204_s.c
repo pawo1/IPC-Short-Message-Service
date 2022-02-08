@@ -17,6 +17,7 @@
 
 #include <errno.h>
 
+
 #include "inf148204_s.h"
 
 int run;
@@ -141,15 +142,29 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
                 if(strcmp(auth.login, users[i]->login) == 0) {
                     find = 1;
                     if(!users[i]->logged) {
-                        if(strcmp(auth.password, users[i]->password) == 0) {
+                        if(users[i]->tryCounter >= MAX_TRIES) {
+                            strncpy(message.msg, "You reached max tries of authentication!\nYour account is blocked, contact with administrator\n", MAX_BUFFER);
+                        } else if(strcmp(auth.password, users[i]->password) == 0) {
                             users[i]->logged = 1;
                             sprintf(message.msg, "Welcome back %s!\n", users[i]->login);
+                            users[i]->tryCounter = 0;
                             message.to = messageQueues[i]; // adress for private queue
                             
                             printLogTime();
                             printf("User %s logged in\n", users[i]->login);
                         } else {
-                            strncpy(message.msg, "Wrong Password!\n", MAX_BUFFER);
+                            users[i]->tryCounter++;
+                            strcpy(message.msg, "Wrong Password!\n");
+                            
+                            char tries[11];
+                            sprintf(tries, "%d", (MAX_TRIES-users[i]->tryCounter));
+                            
+                            strcpy(message.msg+strlen(message.msg), tries);
+                            strcpy(message.msg+strlen(message.msg), " tries left\n"); 
+                            
+                            printLogTime();
+                            printf("User %s tried to login, wrong password. %d tries left before block\n", users[i]->login, MAX_TRIES-users[i]->tryCounter);
+                            
                         }
                     }
                     else {
@@ -185,6 +200,21 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                     else
                         continue;
                     
+                    if(users[j]->blockedGroups[index] == 1) {
+                        strcpy(message.msg, "Cannot send message to user ");
+                        strcpy(message.msg+strlen(message.msg), users[j]->login);
+                        strcpy(message.msg+strlen(message.msg), " blocked this group\n");
+                        message.mtype = PRIORITY_PORT;
+                        message.priority = 0;
+                        message.start = 1;
+                        message.end = 1;
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                        
+                        printLogTime();
+                        printf("Message from %s as message to group %s, hasn't sent to %s. Reson: blocked by user\n", users[i]->login, groups[index]->name, users[j]->login);
+                        continue;
+                    }
+                    
                     if(uid != i) { // prevent sending messages to itself
                         queue = messageQueues[uid];
                         message.mtype = (message.priority ? PRIORITY_PORT : (index + GROUP_OFFSET)); // information who sent message
@@ -214,6 +244,22 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                 uid = message.to-USER_OFFSET;
                 queue = messageQueues[uid];
                 message.mtype = (message.priority ? PRIORITY_PORT : i+USER_OFFSET); // information who sent message
+                
+                if(users[uid]->blockedUsers[i] == 1) {
+                    strcpy(message.msg, "Cannot send message to user ");
+                    strcpy(message.msg+strlen(message.msg), users[uid]->login);
+                    strcpy(message.msg+strlen(message.msg), " because of block\n");
+                    message.mtype = PRIORITY_PORT;
+                    message.priority = 0;
+                    message.start = 1;
+                    message.end = 1;
+                    msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                        
+                    printLogTime();
+                    printf("Message from %s hasn't sent to %s. Reson: blocked by user\n", users[i]->login, users[uid]->login);
+                        return;
+                }
+                
                 result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                 if(result == -1) {
                     if(errno == EAGAIN) {
@@ -575,11 +621,80 @@ void proceedCommands(struct user **users, int *loadedUsers, struct group **group
                         msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                     }
                 
-                } else if(strcmp(cmdmsg.command, "block") == 0) {
-/* block */
-                } else if(strcmp(cmdmsg.command, "unblock") == 0) {
-/* unblock */
-                } 
+                } else if(strcmp(cmdmsg.command, "block") == 0 || strcmp(cmdmsg.command, "unblock") == 0) {
+/* block */         
+
+                    int block = 0;
+                    if(strcmp(cmdmsg.command, "block") == 0) 
+                        block = 1;
+                    find  = 0;
+                    if(strcmp(cmdmsg.arguments[0], "group") == 0) {
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            
+                            if(strcmp(cmdmsg.arguments[1], groups[j]->name) == 0) {
+                                find = 1;
+                                users[i]->blockedGroups[j] = block;
+                                if(block)
+                                    strcpy(message.msg, "Group blocked.\n");
+                                else
+                                    strcpy(message.msg, "Group unblocked.\n");
+                                
+                                printLogTime();
+                                if(block)
+                                    printf("User %s blocked messages from group %s\n", users[i]->login, groups[j]->name);
+                                else
+                                    printf("User %s unblocked messages from group %s\n", users[i]->login, groups[j]->name);
+                                    
+                                break;
+                            }
+                        }
+                        
+                        if(!find) {
+                            printLogTime();
+                            if(block)
+                                printf("User %s tried to block group %s, but register not found\n", users[i]->login, cmdmsg.arguments[1]);
+                            else
+                                printf("User %s tried to unblock group %s, but register not found\n", users[i]->login, cmdmsg.arguments[1]);
+                        }
+                        
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                    } else {
+                        for(int j=0; j<(*loadedUsers); ++j) {
+                            
+                            if(strcmp(cmdmsg.arguments[0], users[j]->login) == 0) {
+                                find = 1;
+                                users[i]->blockedUsers[j] = block;
+                                
+                                if(block)
+                                    strcpy(message.msg, "User blocked.\n");
+                                else
+                                    strcpy(message.msg, "User unblocked.\n");
+                                
+                                printLogTime();
+                                
+                                if(block)
+                                    printf("User %s blocked messages from user %s\n", users[i]->login, users[j]->login);
+                                else
+                                    printf("User %s unblocked messages from user %s\n", users[i]->login, users[j]->login);
+                                
+                                break;
+                            }
+                        }
+                        
+                        if(!find) {
+                            printLogTime();
+                            if(block)
+                                printf("User %s tried to block user %s, but register not found\n", users[i]->login, cmdmsg.arguments[0]);
+                            else
+                                printf("User %s tried to unblock user %s, but register not found\n", users[i]->login, cmdmsg.arguments[0]);
+                        }
+                        
+                        msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                    }
+                    
+
+                
+                }
 
             }
         } 

@@ -25,4 +25,6 @@
 
 #define OFFSET 10
 
+#define MAX_TRIES 3
+
 #endif

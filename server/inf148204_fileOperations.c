@@ -90,6 +90,15 @@ int loadUser(int fd, struct user *userRegister) {
     
     userRegister->logged = 0;
     
+    for(int i=0; i<MAX_USERS; ++i) {
+        userRegister->blockedUsers[i] = 0;
+    }
+    for(int i=0; i<MAX_GROUPS; ++i) {
+        userRegister->blockedGroups[i] = 0;
+    }
+    
+    userRegister->tryCounter = 0;
+    
     return 0;
 }
 

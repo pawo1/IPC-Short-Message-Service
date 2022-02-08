@@ -220,6 +220,10 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                 printf("/group - list of available groups\n");
                 printf("/group join *group_name* - join specified group\n");
                 printf("/group leave *group_name* - leave specified group\n");
+                printf("/block *user_name* - block messages from user\n");
+                printf("/block group *group_name* - block messages from group\n");
+                printf("/unblock *user_name* - unblock messages from user\n");
+                printf("/unblock group *group_name* - unblock messages grom group\n");
                 printf("/exit - logout from session and exit program\n");
                 semop(printSemaphore, &v, 1);
                 
@@ -279,8 +283,9 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                     }
                 }
                 
-            } else if(strcmp(cmdmsg.command, "list") == 0 || strcmp(cmdmsg.command, "group") == 0) {
-/* list / group - only passing to server*/
+            } else if(strcmp(cmdmsg.command, "list") == 0 || strcmp(cmdmsg.command, "group") == 0 || strcmp(cmdmsg.command, "block") == 0 ||
+                                                                                                     strcmp(cmdmsg.command, "unblock") == 0) {
+/* list / group / block / unblock - only passing to server*/
                 semop(statusSemaphore, &p, 1);
                 if(strcmp(cmdmsg.arguments[0], "leave") == 0 && strcmp(status->prompt, cmdmsg.arguments[1]) == 0) {
                     strcpy(status->prompt, "Menu");
@@ -340,12 +345,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             } else if(strcmp(cmdmsg.command, "exit") == 0) {
 /* exit */
                 run = 0;
-            } /*else if(strcmp(cmdmsg.command, "block") == 0) {
-            
-            
-            } else if(strcmp(cmdmsg.command, "unblock") == 0) {
-                
-            } */ else {
+            }  else {
 /* default */
                 printSystemInfo("Unsupported command!\nType /help for list of available commands\n", printSemaphore);
             }
