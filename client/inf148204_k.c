@@ -66,20 +66,19 @@ int main() {
     
     int child_id = fork();
     
-    if(child_id != 0) {
+    if(child_id == 0) {
         signal(SIGINT, run_changer);
         messageReceiver(status, statusSemaphore, printSemaphore);
+        shmdt(status);
     } else {
         signal(SIGINT, run_changer);
         userManager(status, statusSemaphore, printSemaphore);
         kill(child_id, SIGINT);
+        semctl(statusSemaphore, 0, IPC_RMID);
+        semctl(printSemaphore, 0, IPC_RMID);
+        shmdt(status);
+        shmctl(mem_id, IPC_RMID, 0);
     }
-    
-    
-    semctl(statusSemaphore, 0, IPC_RMID);
-    semctl(printSemaphore, 0, IPC_RMID);
-    shmdt(status);
-    shmctl(mem_id, IPC_RMID, 0);
     
     return 0;
 }
@@ -93,20 +92,22 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
     char c;
     int i, start, id, msgGroup;
     
-    scanf("%c", &c);
-    c = 'a';
-    
     struct msgbuf message;
     struct cmdbuf cmdmsg;
     
-    char prompt[MAX_LOGIN_LENGTH+1];
+    char prompt[MAX_LOGIN_LENGTH+MAX_GROUP_NAME+2+1];
     
     while(run) {
         semop(statusSemaphore, &p, 1);
         queue = status->privateQueue;
         id = (status->choosenUser > 0 ? status->choosenUser : (status->choosenGroup > 0 ? status->choosenGroup : -1));
         msgGroup = (status->choosenGroup > 0 ? 1 : 0);
+        
         strcpy(name, status->name);
+        if(status->choosenGroup > 0 ) {
+            strcpy(name+strlen(status->name), "->");
+            strcpy(name+strlen(status->name)+2, status->prompt);
+        }
         strcpy(prompt, status->prompt);
         semop(statusSemaphore, &v, 1);
         
@@ -195,7 +196,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             if(strcmp(cmdmsg.command, "help") == 0) {
                 
             } else if(strcmp(cmdmsg.command, "login") == 0) {
-                
+/* login */
                 char name[MAX_LOGIN_LENGTH];
                 
                 
@@ -223,6 +224,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                 
                 }
             } else if(strcmp(cmdmsg.command, "logout") == 0) {
+/* logout */
                 semop(statusSemaphore, &p, 1);
                 status->logged = 0;
                 int authQueue = status->publicQueue;
@@ -243,26 +245,30 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                         status->promptSize = 4;
                         strcpy(status->prompt, "Menu");
                         semop(statusSemaphore, &v, 1);
-                        
-                        scanf("%c", &c); // flush newline from login
                     }
                 }
                 
-            } else if(strcmp(cmdmsg.command, "list") == 0) {
-                
-            } else if(strcmp(cmdmsg.command, "group") == 0) {
-                
-            } else if(strcmp(cmdmsg.command, "msg") == 0) {
+            } else if(strcmp(cmdmsg.command, "list") == 0 || strcmp(cmdmsg.command, "group") == 0) {
+/* list / group - only passing to server*/
                 result = msgsnd(queue, &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), 0);
                 if(result == -1) {
                     printSystemInfo("Cannot pass command to server\n", printSemaphore);
                 }
+            }  else if(strcmp(cmdmsg.command, "msg") == 0) {
+/* msg */
+                result = msgsnd(queue, &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), 0);
+                if(result == -1) {
+                    printSystemInfo("Cannot pass command to server\n", printSemaphore);
+                }
+                
+                semop(statusSemaphore, &p, 0);
+                semop(printSemaphore, &p, 0); // block printing old prompt
                 result = msgrcv(queue, &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), ANSWER_PORT, 0);
                 if(result == -1) {
                     printSystemInfo("Error server connection\n", printSemaphore);
                 } else {
                     if(cmdmsg.result != -1) {
-                        semop(statusSemaphore, &p, 1);
+                        
                         if(strcmp(cmdmsg.arguments[0], "group") == 0 && cmdmsg.arguments[1][0] != '\0') {
                             status->choosenGroup = cmdmsg.result;
                             status->choosenUser = -1;
@@ -273,14 +279,24 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                             strcpy(status->prompt, cmdmsg.arguments[0]);
                         }
                         status->promptSize = strlen(status->prompt);
-                        semop(statusSemaphore, &v, 1);
+                        
                     }
                 }
-            } else if(strcmp(cmdmsg.command, "menu") == 0) {
+                semop(printSemaphore, &v, 0);
+                semop(statusSemaphore, &v, 0);
                 
+            } else if(strcmp(cmdmsg.command, "menu") == 0) {
+/* menu */
+                semop(statusSemaphore, &p, 0);
+                status->choosenGroup = -1;
+                status->choosenUser = -1;
+                strcpy(status->prompt, "Menu");
+                status->promptSize = 4;
+                semop(statusSemaphore, &v, 0);
             } else if(strcmp(cmdmsg.command, "p") == 0) {
                 printSystemInfo("Priority message is empty, type something after /p \n", printSemaphore);
             } else if(strcmp(cmdmsg.command, "exit") == 0) {
+/* exit */
                 run = 0;
             } /*else if(strcmp(cmdmsg.command, "block") == 0) {
             
@@ -288,12 +304,13 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             } else if(strcmp(cmdmsg.command, "unblock") == 0) {
                 
             } */ else {
+/* default */
                 printSystemInfo("Unsupported command!\nType /help for list of available commands\n", printSemaphore);
             }
             
             
             
-        } else if(buffer[0] != '\n' && start == 1 && id != -1) { // prevent sending empty messages
+        } else if(buffer[0] != '\n' && id != -1) { // prevent sending empty messages
             buffer[i] = '\0';
             strncpy(message.msg, buffer, MAX_BUFFER);
             message.start = start;
@@ -319,7 +336,7 @@ void messageReceiver(struct state *status, int statusSemaphore, int printSemapho
     struct msgbuf message;
     int queue, id, promptSize;
     int result;
-    char prompt[20];
+    char prompt[72];
     
     while(run) {
         
@@ -433,6 +450,8 @@ int login(char * name, int auth_queue, int printSemaphore) {
             for(int i=0; i<7; ++i)
                 printf("\b \b");
             fflush(stdout);
+            char c;
+            scanf("%c", &c); // flush newline from stdin
             semop(printSemaphore, &v, 1);
             
             

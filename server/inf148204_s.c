@@ -180,19 +180,30 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                 int size = groups[index]->groupSize;
                 for(int j=0; j<size; ++j) {
                     uid = groups[index]->userId[j];
-                    queue = messageQueues[uid];
-                    message.mtype = (message.priority ? PRIORITY_PORT : (i + GROUP_OFFSET)); // information who sent message
-                    result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
-                    if(result == -1) {
-                        if(errno == EAGAIN) {
-                            sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
+                    if(uid != i) { // prevent sending messages to itself
+                        queue = messageQueues[uid];
+                        message.mtype = (message.priority ? PRIORITY_PORT : (index + GROUP_OFFSET)); // information who sent message
+                        result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                        if(result == -1) {
+                            if(errno == EAGAIN) {
+                                sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
+                                
+                                printLogTime();
+                                printf("User %s has full queue, message lost\n", users[i]->login);
+                                
+                            } else {
+                                sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
+                                
+                                printLogTime();
+                                printf("Error accessing %s queue\n", users[i]->login);
+                            }
                         } else {
-                            sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
+                            sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
+                            
+                            printLogTime();
+                            printf("Sent Message from %s to %s as group %s message\n", users[i]->login, users[uid]->login, groups[index]->name);
                         }
-                    } else {
-                        sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
                     }
-                    // TODO Better messages and logs on server
                 }
             } else {
                 uid = message.to-USER_OFFSET;
@@ -202,11 +213,20 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                 if(result == -1) {
                     if(errno == EAGAIN) {
                         sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
+                        
+                        printLogTime();
+                        printf("User %s has full queue, message lost\n", users[i]->login);
                     } else {
                         sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
+                                
+                        printLogTime();
+                        printf("Error accessing %s queue\n", users[i]->login);
                     }
                 } else {
                     sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
+                            
+                    printLogTime();
+                    printf("Sent Message from %s to %s\n", users[i]->login, users[uid]->login);
                 }
             }
                 
