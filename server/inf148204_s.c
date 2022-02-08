@@ -364,11 +364,154 @@ void proceedCommands(struct user **users, int *loadedUsers, struct group **group
                         }
                     }
                 }
-/* end of switching chat */
+            } else if(strcmp(cmdmsg.command, "list") == 0 || (strcmp(cmdmsg.command, "group") == 0 && cmdmsg.arguments[0][0] == '\0' && 
+                                                                                                      cmdmsg.arguments[1][0] == '\0')) {
+/* list users or groups*/
+
+                    message.end = 0;
+                    int len, all, find;
+                    
+                    
+                    len = 0;
+                    if(strcmp(cmdmsg.command, "group") == 0) {
+                        strcpy(message.msg, "List of available Groups in system\n---\n");
+                        len += strlen(message.msg);
+                    } else if(cmdmsg.arguments[0][0] == '\0' || strcmp(cmdmsg.arguments[0], "all") == 0) {
+
+                        
+                        
+                        if(cmdmsg.arguments[0][0] != '\0') {
+                            all = 1;
+                            strcpy(message.msg, "List of all users in system\n---\n");
+                            len += strlen(message.msg);
+                        } else {
+                            all = 0;
+                            strcpy(message.msg, "List of logged users\n---\n");
+                            len += strlen(message.msg);
+                        }
+                        
+                    } else {
+                        
+                        strcpy(message.msg, "List of users in ");
+                        len = strlen(message.msg);
+                        strcpy(message.msg+len, cmdmsg.arguments[0]);
+                        len = strlen(message.msg);
+                        strcpy(message.msg+len, "\n---\n");
+                        len = strlen(message.msg);
+                    }
+                    
+                    if(strcmp(cmdmsg.command, "group") == 0) {
+                        find = 1;
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            if(groups[j]->name[0] != '\0') {
+                                strcpy(message.msg+len, groups[j]->name);
+                                len = strlen(message.msg);
+                                strcpy(message.msg+len, "\n");
+                                len += 1;
+                                if(len >= (MAX_BUFFER-(MAX_LOGIN_LENGTH+1))) { // make sure size of message is proper
+                                    message.start = 0;
+                                    result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                        
+                                    if(result == -1) {
+                                        printLogTime();
+                                        printf("Couldn't send list of groups\n");
+                                        break;
+                                    }
+                                        
+                                    message.start = 0;
+                                    len = 0;
+                                }
+                                
+                            }
+                        }
+                        
+                    } else if(cmdmsg.arguments[0][0] == '\0' || strcmp(cmdmsg.arguments[0], "all") == 0) {
+                        find  = 1;
+                        for(int j=0; j<(*loadedUsers); ++j) {
+                            if(users[j]->logged || all) {
+                                strcpy(message.msg+len, users[j]->login);
+                                len += strlen(users[j]->login);
+                                strcpy(message.msg+len, "\n");
+                                len += 1;
+                                if(len >= (MAX_BUFFER-(MAX_LOGIN_LENGTH+1))) { // make sure size of message is proper
+                                    message.start = 0;
+                                    result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                        
+                                    if(result == -1) {
+                                        printLogTime();
+                                        printf("Couldn't send list of users\n");
+                                        break;
+                                    }
+                                        
+                                    message.start = 0;
+                                    len = 0;
+                                }
+                            }
+                        }
+                    } else {
+                        find = 0;
+                            
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            if(strcmp(cmdmsg.arguments[0], groups[j]->name) == 0) {
+                                find = 1;
+                                for(int k=0; k<groups[j]->groupSize; ++k) {
+                                    int uid = groups[j]->userId[k];
+                                    strcpy(message.msg+len, users[uid]->login);
+                                    len += strlen(users[j]->login);
+                                    strcpy(message.msg+len, "\n");
+                                    len += 1;
+                                    if(len >= (MAX_BUFFER-(MAX_LOGIN_LENGTH+1))) { // make sure size of message is proper
+                                        
+                                        result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                        
+                                        if(result == -1) {
+                                            printLogTime();
+                                            printf("Couldn't send list of users\n");
+                                            break;
+                                        }
+                                        
+                                        message.start = 0;
+                                        len = 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                        
+                        
+                    message.end = 1;
+                    if(find) {
+                        strcpy(message.msg+len, "---\n");
+                            
+                        printLogTime();
+                        if(strcmp(cmdmsg.command, "group") == 0) {
+                            printf("Passed list of groups to %s\n", users[i]->login);
+                        } else if(cmdmsg.arguments[0][0] == '\0' || strcmp(cmdmsg.arguments[0], "all") == 0) {
+                            printf("Passed list of users to %s\n", users[i]->login);
+                        } else {
+                            printf("Passed list of users in %s to %s\n", cmdmsg.arguments[0], users[i]->login);
+                        }
+                    } else {
+                        strcpy(message.msg, "Groupd doens't exist! Type /group for list of available groups\n");
+                            
+                        printLogTime();
+                        printf("User %s requestet list of not valid group: %s\n", users[i]->login, cmdmsg.arguments[0]);
+                    }
+                    
+                    msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+
+                } else if(strcmp(cmdmsg.command, "group") == 0) {
+/* group */
+                } else if(strcmp(cmdmsg.command, "block") == 0) {
+/* block */
+                } else if(strcmp(cmdmsg.command, "unblock") == 0) {
+/* unblock */
+                }
+
             }
         } 
-    }
 }
+
 
 int sendMessage(int queue, int port, int priority, char * message) {
     struct msgbuf answer;

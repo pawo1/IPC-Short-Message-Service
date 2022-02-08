@@ -78,7 +78,10 @@ int main() {
         semctl(printSemaphore, 0, IPC_RMID);
         shmdt(status);
         shmctl(mem_id, IPC_RMID, 0);
+        printf("Logged out\nThanks for using chat\n");
     }
+    
+
     
     return 0;
 }
@@ -194,7 +197,30 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
             }
             
             if(strcmp(cmdmsg.command, "help") == 0) {
-/* help */ //TODO
+/* help */
+                semop(printSemaphore, &p, 1);
+                printf("IPC Short Message Service\n");
+                printf("Send text messages to your friends via server!\n");
+                printf("Thanks to packets there is no message length limit!\n");
+                printf("Join chat with /msg to start receiveing messages\n");
+                printf("List of available commands:\n");
+                printf("/help - print this help\n");
+                printf("/logout - logout from current session\n");
+                printf("/login - login to server (called automatically after logout)\n");
+                printf("/msg *user_name* - join chat with specified user\n");
+                printf("/msg group *group_name* - join chat with specified group\n");
+                printf("/menu - back to menu (in menu you receive only priority messages)\n");
+                printf("/p *message* - send priority message\n\t priority messages are visible even if chat with you is not open\n");
+                printf("/list - list of currently logged users\n");
+                printf("/list all - list all users\n");
+                printf("/list *group_name* - list users added to specified group\n");
+                printf("/group - list of available groups\n");
+                printf("/group join *group_name* - join specified group\n");
+                printf("/group leave *group_name* - leave specified group\n");
+                printf("/exit - logout from session and exit program\n");
+                semop(printSemaphore, &v, 1);
+                
+
             } else if(strcmp(cmdmsg.command, "login") == 0) {
 /* login */
                 char name[MAX_LOGIN_LENGTH];
