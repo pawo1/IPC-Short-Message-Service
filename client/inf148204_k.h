@@ -56,8 +56,8 @@ void logout();
 
 void messageReceiver(struct state *status, int statusSemaphore, int printSemaphore);
 void userManager(struct state *status, int statusSemaphore, int printSemaphore);
-void proceedMessage(struct msgbuf message, char * prompt, int promptSize);
+void proceedMessage(struct msgbuf message,char *name, char * prompt, int promptSize);
 
-void printPrompt(char * prompt);
+void printPrompt(char * name, char * prompt);
 void printSystemInfo(char * message, int sem);
 #endif
