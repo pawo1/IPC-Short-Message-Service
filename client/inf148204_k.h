@@ -26,6 +26,7 @@ struct cmdbuf {
   long mtype;
   char command[MAX_COMMAND];
   char arguments[MAX_ARGS][MAX_COMMAND];
+  int result;
 };
 
 struct state {

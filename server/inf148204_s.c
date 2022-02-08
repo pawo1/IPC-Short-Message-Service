@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
     while(run) {
         proceedAuth(users, loadedUsers, authQueue, messageQueues);
         proceedMessages(users, loadedUsers, groups, messageQueues);
-        //proceedCommands
+        proceedCommands(users, &loadedUsers, groups, messageQueues);
     }
     
     printf("\n");
@@ -145,6 +145,9 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
                             users[i]->logged = 1;
                             sprintf(message.msg, "Welcome back %s!\n", users[i]->login);
                             message.to = messageQueues[i]; // adress for private queue
+                            
+                            printLogTime();
+                            printf("User %s logged in\n", users[i]->login);
                         } else {
                             strncpy(message.msg, "Wrong Password!\n", MAX_BUFFER);
                         }
@@ -168,16 +171,17 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
 
     struct msgbuf message;
     int result, uid, queue;
-    
+    int index;
 
     for(int i=0; i<loadedUsers; ++i) {
         if(msgrcv(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), MESSAGE_PORT, IPC_NOWAIT) > 0) {
             if(message.msgGroup) {
-                int size = groups[message.to]->groupSize;
+                index = message.to - GROUP_OFFSET;
+                int size = groups[index]->groupSize;
                 for(int j=0; j<size; ++j) {
-                    uid = groups[message.to]->userId[j];
+                    uid = groups[index]->userId[j];
                     queue = messageQueues[uid];
-                    message.mtype = (message.priority ? PRIORITY_PORT : users[uid]->id);
+                    message.mtype = (message.priority ? PRIORITY_PORT : (i + GROUP_OFFSET)); // information who sent message
                     result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                     if(result == -1) {
                         if(errno == EAGAIN) {
@@ -191,9 +195,9 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                     // TODO Better messages and logs on server
                 }
             } else {
-                uid = users[message.to]->id;
-                queue = messageQueues[message.to];
-                message.mtype = (message.priority ? PRIORITY_PORT : uid);
+                uid = message.to-USER_OFFSET;
+                queue = messageQueues[uid];
+                message.mtype = (message.priority ? PRIORITY_PORT : i+USER_OFFSET); // information who sent message
                 result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                 if(result == -1) {
                     if(errno == EAGAIN) {
@@ -207,6 +211,142 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
             }
                 
         }
+    }
+}
+
+void proceedCommands(struct user **users, int *loadedUsers, struct group **groups, int *messageQueues) {
+    struct cmdbuf cmdmsg;
+    struct msgbuf message;
+    
+    message.mtype = PRIORITY_PORT;
+    message.priority = 0;
+    message.start = 1;
+    message.end = 1;
+    message.msgGroup = -1;
+
+    int result, find;
+    
+
+    for(int i=0; i<(*loadedUsers); ++i) {
+        if(msgrcv(messageQueues[i], &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), COMMAND_PORT, IPC_NOWAIT) > 0) {
+            if(strcmp(cmdmsg.command, "logout") == 0) {
+/* logout */
+                users[i]->logged = 0;
+                printLogTime();
+                printf("User %s logged out\n", users[i]->login);
+            } else if(strcmp(cmdmsg.command, "msg") == 0) {
+/* switch chat */
+                if(cmdmsg.arguments[0][0] != '\0') {
+                    if(strcmp(cmdmsg.arguments[0], "group") == 0 && cmdmsg.arguments[1][0] != '\0') {
+                        // join group chat
+                        find = 0;
+                        for(int j=0; j<MAX_GROUPS; ++j) {
+                            if(strcmp(cmdmsg.arguments[1], groups[j]->name) == 0) {
+                                find = 1;
+                                int member = 0;
+                                for(int k=0; k<groups[j]->groupSize; ++k) {
+                                    if(groups[j]->userId[k] == i) {
+                                        member = 1;
+                                        break;
+                                    }
+                                }
+                                if(!member) {
+                                    cmdmsg.result = -1;
+                                    strcpy(message.msg, "You are not member of requested group.\nJoin it first by /group join command\n");
+                                    result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                    if(result == -1) {
+                                        printLogTime();
+                                        printf("Cannot send message to %s\n", users[i]->login);
+                                    } else {
+                                        printLogTime();
+                                        printf("Declined request of User %s to join %s group chat\n", users[i]->login, groups[j]->name);
+                                        
+                                    }
+                                } else {
+                                    cmdmsg.result = j + GROUP_OFFSET;
+
+                                    strcpy(message.msg, "Switched to new chat\n");
+                                    result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                    if(result == -1) {
+                                        printLogTime();
+                                        printf("Cannot send message to %s\n", users[i]->login);
+                                    } else {
+                                        printLogTime();
+                                        printf("User %s joined Group Chat: %s\n", users[i]->login, groups[j]->name);
+                                        
+                                    }
+                                }
+                            }
+                        }
+                        if(!find) {
+                            cmdmsg.result = -1;
+                            strcpy(message.msg, "Cannot find specified group\nType /group for list of available groups\n");
+                            result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                if(result == -1) {
+                                    printLogTime();
+                                    printf("Cannot send message to %s\n", users[i]->login);
+                                }
+                                else {
+                                    printLogTime();
+                                    printf("User %s requested join %s group chat, but it doesn't exist\n", users[i]->login, cmdmsg.arguments[1]);
+                                }
+                        }
+                        
+                        cmdmsg.mtype = ANSWER_PORT;
+                        result = msgsnd(messageQueues[i], &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), IPC_NOWAIT);
+                        if(result == -1) {
+                            printLogTime();
+                            printf("Cannot answer %s request\n", users[i]->login);
+                            break;
+                        }
+                        
+                    } else {
+                        //join user chat
+                        find = 0;
+                        for(int j=0; j<MAX_USERS; ++j) {
+                            if(strcmp(cmdmsg.arguments[0], users[j]->login) == 0) {
+                                find = 1;
+                                
+                                cmdmsg.result = j + USER_OFFSET;
+
+                                strcpy(message.msg, "Switched to new chat\n");
+                                result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                                if(result == -1) {
+                                    printLogTime();
+                                    printf("Cannot send message to %s\n", users[i]->login);
+                                } else {
+                                    printLogTime();
+                                    printf("User %s joined Chat: %s\n", users[i]->login, users[j]->login);
+                                }
+                            
+                            }
+                        }
+                        if(!find) {
+                            cmdmsg.result = -1;
+                            strcpy(message.msg, "Cannot find specified user\nType /list for logged users\n/list all for full list of users\n");
+                            result = msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
+                            if(result == -1) {
+                                printLogTime();
+                                printf("Cannot send message to %s\n", users[i]->login);
+                            }
+                            else {
+                                printLogTime();
+                                printf("User %s requested join %s user chat, but it's not found\n", users[i]->login, cmdmsg.arguments[0]);
+                            }
+                        }
+                         
+                        cmdmsg.mtype = ANSWER_PORT;
+                        result = msgsnd(messageQueues[i], &cmdmsg, sizeof(struct cmdbuf)-sizeof(long), IPC_NOWAIT);
+                        if(result == -1) {
+                            printLogTime();
+                            printf("Cannot answer %s request\n", users[i]->login);
+                            break;
+                        }
+                    }
+                }
+/* end of switching chat */
+            }
+        } 
     }
 }
 
