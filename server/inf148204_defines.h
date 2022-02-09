@@ -2,6 +2,8 @@
 #define __inf148204_defines_h
 
 
+#define MEMORY_KEY 99901
+
 #define MAX_USERS 32
 #define MAX_GROUPS 10
 

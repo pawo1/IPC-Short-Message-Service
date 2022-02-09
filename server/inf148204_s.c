@@ -43,13 +43,13 @@ int main(int argc, char *argv[]) {
     if(argc > 1) {
         if(strcmp(argv[1], "repair") == 0) {
             printf("Repairing locked queues...\n");
-            int queue = msgget(99901, 0640 | IPC_CREAT);
+            int queue = msgget(MEMORY_KEY, 0640 | IPC_CREAT);
             msgctl(queue, IPC_RMID, NULL);
             printf("Rerun server without *repair* option\n");
             return 0;
         }
         
-       config = argv[1];
+        config = argv[1];
     } else {
         config = strdup("default.txt");
     }
@@ -57,12 +57,12 @@ int main(int argc, char *argv[]) {
     if(argc > 2) {
         threadCounter = atoi(argv[2]);
     } else {
-        threadCounter = 2;
+        threadCounter = 4;
     }
     
-    int groupSemaphore = semget(ftok(".", getpid()+1), sizeof(union semun), IPC_CREAT | 0640);
-    int userSemaphore = semget(ftok(".", getpid()+2), sizeof(union semun), IPC_CREAT | 0640);
-    int printSemaphore = semget(ftok(".", getpid()+3), sizeof(union semun), IPC_CREAT | 0640);
+    int groupSemaphore = semget(ftok(".", MEMORY_KEY+1), sizeof(union semun), IPC_CREAT | 0640);
+    int userSemaphore = semget(ftok(".", MEMORY_KEY+2), sizeof(union semun), IPC_CREAT | 0640);
+    int printSemaphore = semget(ftok(".", MEMORY_KEY+3), sizeof(union semun), IPC_CREAT | 0640);
     union semun semaphoreUnion;
     semaphoreUnion.val = 1;
     semctl(groupSemaphore, 0, SETVAL, semaphoreUnion);
@@ -70,29 +70,44 @@ int main(int argc, char *argv[]) {
     semctl(printSemaphore, 0, SETVAL, semaphoreUnion);
     
     struct user **users;
-    int user_id = shmget(ftok(".", getpid()+4), sizeof(struct user*) * MAX_USERS, IPC_CREAT | 0640);
+    int user_id = shmget(ftok(".", MEMORY_KEY+4), sizeof(struct user*) * MAX_USERS, IPC_CREAT | 0640);
     if(user_id == -1) {
         printLogTime();
         printf("Error %d during user memory allocation\n", errno);
+        freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
         return -1;
     }
     users  = shmat(user_id, NULL, 0);
     int user_sub_id[MAX_USERS];
     for(int i=0; i<MAX_USERS; ++i) {
-        user_sub_id[i] = shmget(ftok(".", getpid()+400+i), sizeof(struct user), IPC_CREAT | 0640);
+        user_sub_id[i] = shmget(ftok(".", MEMORY_KEY+400+i), sizeof(struct user), IPC_CREAT | 0640);
         if(user_sub_id[i] == -1) {
             printLogTime();
-            printf("Error %d during memory allocation, cell %d\n", errno, i);
+            printf("Error %d during memory allocation, user cell %d\n", errno, i);
+            freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
+            return -1;
         }
         users[i] = shmat(user_sub_id[i], NULL, 0);
     }
 
     struct group **groups;
-    int group_id = shmget(ftok(".", getpid()+5), sizeof(struct group*) * MAX_GROUPS, IPC_CREAT | 0640);
+    int group_id = shmget(ftok(".", MEMORY_KEY+5), sizeof(struct group*) * MAX_GROUPS, IPC_CREAT | 0640);
+        if(user_id == -1) {
+        printLogTime();
+        printf("Error %d during group memory allocation\n", errno);
+        freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
+        return -1;
+    }
     groups = shmat(group_id, NULL, 0);
     int group_sub_id[MAX_GROUPS];
     for(int i=0; i<MAX_GROUPS; ++i) {
-        group_sub_id[i] = shmget(ftok(".", getpid()+500+i), sizeof(struct group), IPC_CREAT | 0640);
+        group_sub_id[i] = shmget(ftok(".", MEMORY_KEY+500+i), sizeof(struct group), IPC_CREAT | 0640);
+        if(group_sub_id[i] == -1) {
+            printLogTime();
+            printf("Error %d during memory allocation, group cell %d\n", errno, i);
+            freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
+            return -1;
+        }
         groups[i] = shmat(group_sub_id[i], NULL, 0);
     }
 
@@ -112,6 +127,7 @@ int main(int argc, char *argv[]) {
         printLogTime();
         printf("Stopping the server...\n");
         freeMemory(users, groups, user_id, user_sub_id, group_id, group_sub_id, 1);
+        freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
         return -1;
     }
     
@@ -122,7 +138,7 @@ int main(int argc, char *argv[]) {
     printLogTime();
     printf("Server loaded %d users\n", loadedUsers);
     
-    int authQueue = msgget(99901, 0640 | IPC_CREAT | IPC_EXCL);
+    int authQueue = msgget(MEMORY_KEY, 0640 | IPC_CREAT | IPC_EXCL);
         
     if(authQueue == -1 && errno == EEXIST) {
         printLogTime();
@@ -155,6 +171,7 @@ int main(int argc, char *argv[]) {
             printLogTime();
             printf("Error during creating queues for users\n");
             freeMemory(users, groups, user_id, user_sub_id, group_id, group_sub_id, 1);
+            freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
             free(messageQueues);
             return -1;
         }
@@ -220,10 +237,7 @@ int main(int argc, char *argv[]) {
             msgctl(messageQueues[i], IPC_RMID, NULL);
         }
         saveConfig(config, users, MAX_USERS, groups, MAX_GROUPS);
-        
-        semctl(groupSemaphore, 0, IPC_RMID);
-        semctl(userSemaphore, 0, IPC_RMID);
-        semctl(printSemaphore, 0, IPC_RMID); // free semaphores
+        freeSemaphores(printSemaphore, userSemaphore, groupSemaphore);
         
     }
 
@@ -1009,6 +1023,13 @@ int sendMessage(int queue, int port, int priority, char * message) {
     return msgsnd(queue, &answer, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
     
 }
+
+void freeSemaphores(int ps, int us, int gs) {
+    semctl(gs, 0, IPC_RMID);
+    semctl(us, 0, IPC_RMID);
+    semctl(ps, 0, IPC_RMID);
+}
+
 
 void freeMemory(struct user **users, struct group **groups, int user_id, int user_sub_id[], int group_id, int group_sub_id[], int parent) {
     /*

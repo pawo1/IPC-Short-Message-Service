@@ -151,6 +151,7 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
                     buffer[MAX_BUFFER] = '\0';
                     
                     strncpy(message.msg, buffer, MAX_BUFFER);
+                    message.msg[MAX_BUFFER] = '\0';
                     message.start = start;
                     message.end = 0;
 
@@ -358,6 +359,8 @@ void userManager(struct state *status, int statusSemaphore, int printSemaphore) 
         } else if(buffer[0] != '\n' && id != -1) { // prevent sending empty messages
             buffer[i] = '\0';
             strncpy(message.msg, buffer, MAX_BUFFER);
+            message.msg[MAX_BUFFER] = '\0';
+            
             message.start = start;
             message.end = 1;
             
