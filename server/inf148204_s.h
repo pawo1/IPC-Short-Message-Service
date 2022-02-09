@@ -46,6 +46,6 @@ void proceedCommands(struct user **users, int *loadedUsers, struct group **group
 
 int sendMessage(int queue, int port, int priority, char * message);
 
-void freeMemory(struct user **users, struct group **groups);
+void freeMemory(struct user **users, struct group **groups, int user_id, int user_sub_id[], int group_id, int group_sub_id[], int parent);
 
 #endif
