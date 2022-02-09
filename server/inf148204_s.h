@@ -5,6 +5,15 @@
 #include "inf148204_logUtils.h"
 #include "inf148204_fileOperations.h"
 
+
+
+
+union semun {
+    int val;
+    struct semid_ds *buf;
+    unsigned short *array;
+};
+
 struct authbuf {
     long mtype;
     char login[MAX_LOGIN_LENGTH+1];
@@ -31,9 +40,9 @@ struct cmdbuf {
   int result;
 };
 
-void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues);
-void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues);
-void proceedCommands(struct user **users, int *loadedUsers, struct group **groups, int *messageQueues);
+void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues, int ps, int us, int gs);
+void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues, int ps, int us, int gs);
+void proceedCommands(struct user **users, int *loadedUsers, struct group **groups, int *messageQueues, int ps, int us, int gs);
 
 int sendMessage(int queue, int port, int priority, char * message);
 

@@ -24,6 +24,9 @@ void run_changer() {
     run = !run;
 }
 
+struct sembuf p = { 0, -1, SEM_UNDO}; 
+struct sembuf v = { 0, +1, SEM_UNDO};
+
 int main() {
 
     int authQueue = msgget(99901, 0640);

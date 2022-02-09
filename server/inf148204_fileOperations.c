@@ -180,8 +180,10 @@ int addGroup(int fd, struct user **users, struct group **groups) {
  //                   groups[i]->userId[index] = j;
                     groups[i]->userId[j] = 1;
                     groups[i]->groupSize++;
+                    break;
                 }
             }
+            break;
         }
         
     }
@@ -189,5 +191,45 @@ int addGroup(int fd, struct user **users, struct group **groups) {
     if(!userFind) return -1;
     if(!groupFind) return 1;
     
+    return 0;
+}
+
+int saveConfig(char *filename, struct user **users, int userNum, struct group **groups, int grupNum) {
+    printLogTime();
+    printf("Saving configuration...\n");
+    
+    int file = open(filename, O_WRONLY | O_TRUNC);
+    if(file < 0)
+        return file;
+        
+    for(int i=0; i<MAX_USERS; ++i) {
+        if(users[i]->login[0] != '\0') {
+            write(file, "U;", 2);
+            write(file, users[i]->login, MAX_LOGIN_LENGTH);
+            write(file, ";", 1);
+            write(file, users[i]->password, MAX_PASSWORD_LENGTH);
+            write(file, "\n", 1);
+        }
+    }
+    
+    for(int i= 0; i<MAX_GROUPS; ++i) {
+        if(groups[i]->name[0] != '\0') {
+            write(file, "G;", 2);
+            write(file, groups[i]->name, MAX_GROUP_NAME);
+            write(file, "\n", 1);
+            
+            for(int j = 0; j<MAX_USERS; ++j) {
+                if(groups[i]->userId[j] == 1) {
+                    write(file, "A;", 2);
+                    write(file, users[j]->login, MAX_LOGIN_LENGTH);
+                    write(file, ";", 1);
+                    write(file, groups[i]->name, MAX_GROUP_NAME);
+                    write(file, "\n", 1);
+                }
+            }
+        }
+    }
+    
+    close(file);
     return 0;
 }

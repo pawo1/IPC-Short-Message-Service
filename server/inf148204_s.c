@@ -15,6 +15,9 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 
+#include <sys/shm.h>
+#include <sys/sem.h>
+
 #include <errno.h>
 
 
@@ -26,25 +29,82 @@ void run_changer() {
     run = !run;
 }
 
+struct sembuf p = { 0, -1, SEM_UNDO}; 
+struct sembuf v = { 0, +1, SEM_UNDO};
+
 int main(int argc, char *argv[]) {
     
     int result;
     int loadedUsers;
     
-    char config[] = "test.txt";
+    char * config;
+    int threadCounter;
     
-    run = 1;
-    signal(SIGINT, run_changer);
-    
-    struct user **users = malloc( sizeof(struct user*) * MAX_USERS );
-    for(int i=0; i<MAX_USERS; ++i)
-        users[i] = malloc( sizeof(struct user) );
+    if(argc > 1) {
+        if(strcmp(argv[1], "repair") == 0) {
+            printf("Repairing locked queues...\n");
+            int queue = msgget(99901, 0640 | IPC_CREAT);
+            msgctl(queue, IPC_RMID, NULL);
+            printf("Rerun server without *repair* option\n");
+            return 0;
+        }
         
-    struct group **groups = malloc( sizeof(struct group*) * MAX_GROUPS);
-    for(int i=0; i<MAX_GROUPS; ++i)
-        groups[i] = malloc( sizeof(struct group) );
+       config = argv[1];
+    } else {
+        config = strdup("default.txt");
+    }
     
-    result = loadConfig("test.txt", users, MAX_USERS, groups, MAX_GROUPS);
+    if(argc > 2) {
+        threadCounter = atoi(argv[2]);
+    } else {
+        threadCounter = 1;
+    }
+    
+    int groupSemaphore = semget(ftok(".", getpid()+1), sizeof(union semun), IPC_CREAT | 0640);
+    int userSemaphore = semget(ftok(".", getpid()+2), sizeof(union semun), IPC_CREAT | 0640);
+    int printSemaphore = semget(ftok(".", getpid()+3), sizeof(union semun), IPC_CREAT | 0640);
+    union semun semaphoreUnion;
+    semaphoreUnion.val = 1;
+    semctl(groupSemaphore, 0, SETVAL, semaphoreUnion);
+    semctl(userSemaphore, 0, SETVAL, semaphoreUnion);
+    semctl(printSemaphore, 0, SETVAL, semaphoreUnion);
+    
+    struct user **users;
+    int user_id = shmget(ftok(".", getpid()+4), sizeof(struct user*) * MAX_USERS, IPC_CREAT | 0640);
+    if(user_id == -1) {
+        printLogTime();
+        printf("Error %d during user memory allocation\n", errno);
+        return -1;
+    }
+    users  = shmat(user_id, NULL, 0);
+    int user_sub_id[MAX_USERS];
+    for(int i=0; i<MAX_USERS; ++i) {
+        user_sub_id[i] = shmget(ftok(".", getpid()+400+i), sizeof(struct user), IPC_CREAT | 0640);
+        if(user_sub_id[i] == -1) {
+            printLogTime();
+            printf("Error %d during memory allocation, cell %d\n", errno, i);
+        }
+        users[i] = shmat(user_sub_id[i], NULL, 0);
+    }
+
+    struct group **groups;
+    int group_id = shmget(ftok(".", getpid()+5), sizeof(struct group*) * MAX_GROUPS, IPC_CREAT | 0640);
+    groups = shmat(group_id, NULL, 0);
+    int group_sub_id[MAX_GROUPS];
+    for(int i=0; i<MAX_GROUPS; ++i) {
+        group_sub_id[i] = shmget(ftok(".", getpid()+500+i), sizeof(struct group), IPC_CREAT | 0640);
+        groups[i] = shmat(group_sub_id[i], NULL, 0);
+    }
+
+    //struct user **users = malloc( sizeof(struct user*) * MAX_USERS );
+    //for(int i=0; i<MAX_USERS; ++i)
+     //   users[i] = malloc( sizeof(struct user) );
+        
+    /*struct group **groups = malloc( sizeof(struct group*) * MAX_GROUPS);
+    for(int i=0; i<MAX_GROUPS; ++i)
+        groups[i] = malloc( sizeof(struct group) ); */
+    
+    result = loadConfig(config, users, MAX_USERS, groups, MAX_GROUPS);
     
     if(result < 0) {
         printLogTime();
@@ -62,12 +122,13 @@ int main(int argc, char *argv[]) {
     printLogTime();
     printf("Server loaded %d users\n", loadedUsers);
     
-    //TODO: IPC_EXCL when all Signals are managed 
-    int authQueue = msgget(99901, 0640 | IPC_CREAT);
+    int authQueue = msgget(99901, 0640 | IPC_CREAT | IPC_EXCL);
         
     if(authQueue == -1 && errno == EEXIST) {
         printLogTime();
         printf("Server queue already exist\n\t\t\tis there another server process running?\n");
+        printLogTime();
+        printf("You can reset queues by runing server with *repair* argument\n");
         printLogTime();
         printf("Stopping the server...\n");
         freeMemory(users, groups);
@@ -103,19 +164,70 @@ int main(int argc, char *argv[]) {
     printLogTime();
     printf("Server joining run loop. Ctrl+C to stop work\n");
     
-    while(run) {
-        proceedAuth(users, loadedUsers, authQueue, messageQueues);
-        proceedMessages(users, loadedUsers, groups, messageQueues);
-        proceedCommands(users, &loadedUsers, groups, messageQueues);
+    int parent = 1;
+    for(int i=0; i<threadCounter; ++i) {
+        if(parent) {
+            if(fork() == 0) {
+                parent = 0;
+                break;
+            }
+        }
     }
     
-    printf("\n");
-    printLogTime();
-    printf("Stopping the server. Thanks for using chat\n");
-    msgctl(authQueue, IPC_RMID, NULL);
-    for(int i=0; i<loadedUsers; ++i) {
-        msgctl(messageQueues[i], IPC_RMID, NULL);
+    /* starting pararell part of server */
+    
+    run = 1;
+    signal(SIGINT, run_changer);
+    if(!parent) {
+        while(run) {
+            
+            // child workers
+            
+            proceedAuth(users, loadedUsers, authQueue, messageQueues, printSemaphore, userSemaphore, groupSemaphore);
+            proceedMessages(users, loadedUsers, groups, messageQueues, printSemaphore, userSemaphore, groupSemaphore);
+            proceedCommands(users, &loadedUsers, groups, messageQueues, printSemaphore, userSemaphore, groupSemaphore);
+        
+        
+        }
     }
+    else {
+        
+        // parent cleanup memory and manage file acess
+        
+        while(wait(NULL) > 0) {} // wait for all children processes
+        
+        printf("\n");
+        printLogTime();
+        printf("Stopping the server. Thanks for using chat\n");
+        msgctl(authQueue, IPC_RMID, NULL);
+        for(int i=0; i<loadedUsers; ++i) {
+            msgctl(messageQueues[i], IPC_RMID, NULL);
+        }
+        saveConfig(config, users, MAX_USERS, groups, MAX_GROUPS);
+        
+        semctl(groupSemaphore, 0, IPC_RMID);
+        semctl(userSemaphore, 0, IPC_RMID);
+        semctl(printSemaphore, 0, IPC_RMID);
+        
+    }
+    
+    for(int i=0; i<MAX_USERS; ++i) {
+        shmdt(users[i]);
+        if(parent)
+            shmctl(user_sub_id[i], IPC_RMID, 0);
+    }
+    shmdt(users);
+    if(parent)
+        shmctl(user_id, IPC_RMID, 0);
+    
+    for(int i=0; i<MAX_GROUPS; ++i) {
+        shmdt(groups[i]);
+        if(parent)
+            shmctl(group_sub_id[i], IPC_RMID, 0);
+    }
+    shmdt(groups);
+    if(parent)
+        shmctl(group_id, IPC_RMID, 0);
     
     freeMemory(users, groups);
     free(messageQueues);
@@ -123,7 +235,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues) {
+void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messageQueues, int ps, int us, int gs) {
     
     struct authbuf auth;
     struct msgbuf message;
@@ -137,10 +249,18 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
             message.end = 1;
             message.to = -1;
             
+            char login[MAX_LOGIN_LENGTH];
+            
+            
             for(int i=0; i<loadedUsers; ++i) {
                 
-                if(strcmp(auth.login, users[i]->login) == 0) {
+                semop(us, &p, 1);
+                strcpy(login, users[i]->login);
+                semop(us, &v, 1);
+                
+                if(strcmp(auth.login, login) == 0) {
                     find = 1;
+                    semop(us, &p, 1);
                     if(!users[i]->logged) {
                         if(users[i]->tryCounter >= MAX_TRIES) {
                             strncpy(message.msg, "You reached max tries of authentication!\nYour account is blocked, contact with administrator\n", MAX_BUFFER);
@@ -150,8 +270,10 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
                             users[i]->tryCounter = 0;
                             message.to = messageQueues[i]; // adress for private queue
                             
+                            semop(ps, &p, 1);
                             printLogTime();
                             printf("User %s logged in\n", users[i]->login);
+                            semop(ps, &v, 1);
                         } else {
                             users[i]->tryCounter++;
                             strcpy(message.msg, "Wrong Password!\n");
@@ -162,18 +284,23 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
                             strcpy(message.msg+strlen(message.msg), tries);
                             strcpy(message.msg+strlen(message.msg), " tries left\n"); 
                             
+                            semop(ps, &p, 1);
                             printLogTime();
                             printf("User %s tried to login, wrong password. %d tries left before block\n", users[i]->login, MAX_TRIES-users[i]->tryCounter);
-                            
+                            semop(ps, &v, 1);
                         }
                     }
                     else {
                         strncpy(message.msg, "User already logged on another client\n", MAX_BUFFER);
                     }
+                    
+                    semop(us, &v, 1); // leave critical section before send message in case of waiting for client 
                     msgsnd(auth.client_queue, &message, sizeof(message)-sizeof(long), 0);
                     break;
                 }
             }
+           
+            
             if(!find) {
                 // wrong username
                 strncpy(message.msg, "Wrong Login\n", MAX_BUFFER);
@@ -182,7 +309,7 @@ void proceedAuth(struct user **users, int loadedUsers, int authQueue, int *messa
         }
 }
 
-void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues) {
+void proceedMessages(struct user **users, int loadedUsers, struct group **groups, int *messageQueues, int ps, int us, int gs) {
 
     struct msgbuf message;
     int result, uid, queue;
@@ -192,15 +319,30 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
         if(msgrcv(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), MESSAGE_PORT, IPC_NOWAIT) > 0) {
             if(message.msgGroup) {
                 index = message.to - GROUP_OFFSET;
-                //int size = groups[index]->groupSize;
-                //for(int j=0; j<size; ++j) {
+                
+                char groupName[MAX_GROUP_NAME];
+                semop(gs, &p, 1);
+                strcpy(groupName, groups[index]->name);
+                semop(gs, &v, 1);
+                
+                
                 for(int j=0; j<MAX_USERS; ++j) {
+                    semop(gs, &p, 1);
                     if(groups[index]->userId[j] == 1)
                         uid = j; //groups[index]->userId[j];
                     else
+                        uid = -1;
+                    semop(gs, &v, 1);
+
+                    if(uid == -1)
                         continue;
                     
-                    if(users[j]->blockedGroups[index] == 1) {
+                    semop(us, &p, 1);
+                    int blocked = users[j]->blockedGroups[index];
+                    semop(us, &v, 1);
+                    
+                    if(blocked) {
+                        semop(us, &p, 1);
                         strcpy(message.msg, "Cannot send message to user ");
                         strcpy(message.msg+strlen(message.msg), users[j]->login);
                         strcpy(message.msg+strlen(message.msg), " blocked this group\n");
@@ -210,8 +352,12 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                         message.end = 1;
                         msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                         
+                        semop(ps, &p, 1);
                         printLogTime();
-                        printf("Message from %s as message to group %s, hasn't sent to %s. Reson: blocked by user\n", users[i]->login, groups[index]->name, users[j]->login);
+                        printf("Message from %s as message to group %s, hasn't sent to %s. Reson: blocked by user\n", users[i]->login, groupName, users[j]->login);
+                        semop(ps, &v, 1);
+                        
+                        semop(us, &v, 1);
                         continue;
                     }
                     
@@ -223,20 +369,32 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                             if(errno == EAGAIN) {
                                 sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
                                 
+                                semop(us, &p, 1);
+                                semop(ps, &p, 1);
                                 printLogTime();
                                 printf("User %s has full queue, message lost\n", users[i]->login);
+                                semop(ps, &v, 1);
+                                semop(us, &v, 1);
                                 
                             } else {
                                 sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
                                 
+                                semop(us, &p, 1);
+                                semop(ps, &p, 1);
                                 printLogTime();
                                 printf("Error accessing %s queue\n", users[i]->login);
+                                semop(ps, &v, 1);
+                                semop(us, &v, 1);
                             }
                         } else {
                             sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
                             
+                            semop(us, &p, 1);
+                            semop(ps, &p, 1);
                             printLogTime();
-                            printf("Sent Message from %s to %s as group %s message\n", users[i]->login, users[uid]->login, groups[index]->name);
+                            printf("Sent Message from %s to %s as group %s message\n", users[i]->login, users[uid]->login, groupName);
+                            semop(ps, &v, 1);
+                            semop(us, &v, 1);
                         }
                     }
                 }
@@ -245,9 +403,15 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                 queue = messageQueues[uid];
                 message.mtype = (message.priority ? PRIORITY_PORT : i+USER_OFFSET); // information who sent message
                 
-                if(users[uid]->blockedUsers[i] == 1) {
+                semop(us, &p, 1);
+                int blocked = users[uid]->blockedUsers[i];
+                semop(us, &v, 1);
+                
+                if(blocked) {
                     strcpy(message.msg, "Cannot send message to user ");
+                    semop(us, &p, 1);
                     strcpy(message.msg+strlen(message.msg), users[uid]->login);
+                    semop(us, &v, 1);
                     strcpy(message.msg+strlen(message.msg), " because of block\n");
                     message.mtype = PRIORITY_PORT;
                     message.priority = 0;
@@ -255,9 +419,14 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                     message.end = 1;
                     msgsnd(messageQueues[i], &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
                         
+                    semop(us, &p, 1);
+                    semop(ps, &p, 1);
                     printLogTime();
                     printf("Message from %s hasn't sent to %s. Reson: blocked by user\n", users[i]->login, users[uid]->login);
-                        return;
+                    semop(ps, &v, 1);
+                    semop(us, &v, 1);
+                    
+                    return;
                 }
                 
                 result = msgsnd(queue, &message, sizeof(struct msgbuf)-sizeof(long), IPC_NOWAIT);
@@ -265,19 +434,32 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
                     if(errno == EAGAIN) {
                         sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Couldn't deliver message, queue is full\n");
                         
+                        semop(us, &p, 1);
+                        semop(ps, &p, 1);
                         printLogTime();
                         printf("User %s has full queue, message lost\n", users[i]->login);
+                        semop(ps, &v, 1);
+                        semop(us, &v, 1);
+                        
                     } else {
                         sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Error during sending message\n");
-                                
+                        
+                        semop(us, &p, 1);
+                        semop(ps, &p, 1);
                         printLogTime();
                         printf("Error accessing %s queue\n", users[i]->login);
+                        semop(us, &v, 1);
+                        semop(ps, &v, 1);
                     }
                 } else {
                     sendMessage(messageQueues[i], PRIORITY_PORT, 0, "Message delivered\n");
-                            
+                    
+                    semop(us, &p, 1);
+                    semop(ps, &p, 1);
                     printLogTime();
                     printf("Sent Message from %s to %s\n", users[i]->login, users[uid]->login);
+                    semop(us, &v, 1);
+                    semop(ps, &v, 1);
                 }
             }
                 
@@ -285,7 +467,7 @@ void proceedMessages(struct user **users, int loadedUsers, struct group **groups
     }
 }
 
-void proceedCommands(struct user **users, int *loadedUsers, struct group **groups, int *messageQueues) {
+void proceedCommands(struct user **users, int *loadedUsers, struct group **groups, int *messageQueues, int ps, int us, int gs) {
     struct cmdbuf cmdmsg;
     struct msgbuf message;
     

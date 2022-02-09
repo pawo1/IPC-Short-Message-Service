@@ -24,4 +24,6 @@ int loadUser(int fd, struct user *userRegister);
 int loadGroup(int fd, struct group *groupRegister);
 int addGroup(int fd, struct user **users, struct group **groups);
 
+int saveConfig(char *filename, struct user **users, int userNum, struct group **groups, int groupNum);
+
 #endif

@@ -40,8 +40,7 @@ struct state {
     int publicQueue;
 };
 
-struct sembuf p = { 0, -1, SEM_UNDO}; 
-struct sembuf v = { 0, +1, SEM_UNDO};
+
 
 union semun {
     int val;
