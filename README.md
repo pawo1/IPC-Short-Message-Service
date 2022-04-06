@@ -1,4 +1,4 @@
-# IPC-Short-Message-Service
+# IPC Short Message Service
 
 Client and Server of simple chat made in C using IPC libraries.
 Main aim of this project was dealing with multi-threading and memory managment.
